@@ -102,6 +102,13 @@ export class NavLights {
     }
     if (alt < 2500) out.push([0, yMid, zNose, 1.5, 1.5, 1.3, 7.0]); // landing lights, low only
 
+    // Airline livery accent — a brand-coloured "logo light" on the tail fin.
+    const liv = e.livery;
+    if (liv) {
+      const b = 0.55 + 0.4 * (this.night || 0);
+      out.push([0, yTop * 0.72, zTail * 0.7, liv.r * b, liv.g * b, liv.b * b, 5.2]);
+    }
+
     // Night fog/landing-light glow. At night every aircraft throws a forward
     // light glint; when it's flying through cloud (overcast + within the cloud
     // band) the light scatters into a big soft halo — so you can see it lighting

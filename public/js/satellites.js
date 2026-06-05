@@ -172,6 +172,38 @@ export class SatelliteLayer {
       });
   }
 
+  // ISS pass status: whether it's up now (with current/peak elevation) or, if
+  // not, when the next pass rises and its peak elevation. Steps the orbit forward
+  // up to ~2.5h. `sunlit` flags whether a pass would actually be visible (dark sky).
+  issStatus(observer, date, sunAltDeg = -90) {
+    const rec = this.satrecs.find((s) => /ISS|ZARYA/i.test(s.name));
+    if (!rec) return null;
+    const gd = { longitude: observer.lon * DEG, latitude: observer.lat * DEG, height: (observer.alt || 0) / 1000 };
+    const elAt = (d) => {
+      const pv = satellite.propagate(rec.satrec, d);
+      if (!pv || !pv.position) return -90;
+      const ecf = satellite.eciToEcf(pv.position, satellite.gstime(d));
+      return satellite.ecfToLookAngles(gd, ecf).elevation * 180 / Math.PI;
+    };
+    const visible = sunAltDeg < -6; // dark enough at the observer to see a pass
+    const now = elAt(date);
+    if (now > 0) {
+      let maxEl = now;
+      for (let t = 20; t <= 600; t += 20) maxEl = Math.max(maxEl, elAt(new Date(date.getTime() + t * 1000)));
+      return { up: true, elevation: now, maxEl, etaSec: 0, visible };
+    }
+    let prev = now, riseT = null;
+    for (let t = 30; t <= 9000; t += 30) {
+      const e = elAt(new Date(date.getTime() + t * 1000));
+      if (prev < 0 && e >= 0) { riseT = t; break; }
+      prev = e;
+    }
+    if (riseT == null) return { up: false, etaSec: null };
+    let maxEl = 0;
+    for (let t = riseT; t <= riseT + 700; t += 20) maxEl = Math.max(maxEl, elAt(new Date(date.getTime() + t * 1000)));
+    return { up: false, etaSec: riseT, maxEl, visible };
+  }
+
   _peak(observer, satrec, date) {
     if (!satrec) return { sec: 0, rising: false };
     const gd = { longitude: observer.lon * DEG, latitude: observer.lat * DEG, height: (observer.alt || 0) / 1000 };

@@ -308,6 +308,36 @@ initData();
 setInterval(refreshAircraft, 12_000);
 setInterval(refreshWeather, 10 * 60_000);
 
+// --- ISS pass alerts ---
+const issEl = document.getElementById('iss-alert');
+let issInfo = null;
+let issTarget = 0;        // epoch ms of next-pass rise, for the live countdown
+function refreshIss() {
+  issInfo = layers.satellites.issStatus(state.observer, now(), layers.planets.sunAltitude);
+  if (issInfo && issInfo.etaSec) issTarget = Date.now() + issInfo.etaSec * 1000;
+  renderIss();
+}
+function renderIss() {
+  if (!issEl) return;
+  if (!issInfo) { issEl.className = ''; return; }
+  if (issInfo.up) {
+    issEl.className = 'show now';
+    issEl.innerHTML = `🛰 ISS OVERHEAD NOW · ${Math.round(issInfo.elevation)}°`
+      + ` <span class="iss-sub">peak ${Math.round(issInfo.maxEl)}°${issInfo.visible ? '' : ' · daylight'}</span>`;
+  } else if (issInfo.etaSec != null && issInfo.etaSec < 900) {
+    const rem = Math.max(0, Math.round((issTarget - Date.now()) / 1000));
+    const mm = Math.floor(rem / 60), ss = String(rem % 60).padStart(2, '0');
+    issEl.className = 'show';
+    issEl.innerHTML = `🛰 ISS pass in ${mm}:${ss}`
+      + ` <span class="iss-sub">max ${Math.round(issInfo.maxEl)}°${issInfo.visible ? ' · visible' : ' · daylight'}</span>`;
+  } else {
+    issEl.className = '';
+  }
+}
+refreshIss();
+setInterval(refreshIss, 12_000);
+setInterval(() => { flightBoard.tick(); renderIss(); }, 1000);
+
 // --- render loop ---
 let lastPick = 0, lastPump = 0, lastBoard = 0, lastTick = 0;
 renderer.setAnimationLoop((t) => {

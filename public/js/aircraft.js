@@ -12,6 +12,7 @@ import { SHELLS, makeTextSprite } from './sky.js';
 import { buildAirliner, buildHelicopter, aircraftMaterial } from './plane-model.js';
 import { classify, isHelicopter, CATEGORY } from './classify.js';
 import { instantiate } from './assets.js';
+import { liveryColor } from './airlines.js';
 
 // Map an aircraft to the best-matching 3D model by service + ICAO type code.
 function modelKeyFor(entry) {
@@ -134,6 +135,7 @@ export class AircraftLayer {
       history: [], lastTrail: 0,
       info: null, enriching: false,
       category: 'civ', isHeli: false, modelKey: null,
+      livery: liveryColor(a.callsign),   // airline brand-colour accent (or null)
       state: a,
     };
     this.planes.set(a.id, entry);
