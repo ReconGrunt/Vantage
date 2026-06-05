@@ -1,0 +1,206 @@
+:root {
+  --bg: #05070f;
+  --panel: rgba(13, 20, 33, 0.82);
+  --panel-border: rgba(90, 130, 180, 0.25);
+  --text: #cfe0f0;
+  --muted: #7e93ab;
+  --accent: #6fd3ff;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); }
+body { font-family: Inter, system-ui, Arial, sans-serif; color: var(--text); }
+
+#view { display: block; width: 100vw; height: 100vh; }
+
+#panel {
+  position: fixed; top: 16px; left: 16px; width: 300px;
+  max-height: calc(100vh - 32px); overflow-y: auto; overflow-x: hidden;
+  background: var(--panel); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  border: 1px solid var(--panel-border); border-radius: 14px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  transition: width .2s;
+  scrollbar-width: thin; scrollbar-color: rgba(120,150,190,0.4) transparent;
+}
+#panel::-webkit-scrollbar { width: 8px; }
+#panel::-webkit-scrollbar-thumb { background: rgba(120,150,190,0.4); border-radius: 4px; }
+.panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px; border-bottom: 1px solid var(--panel-border);
+}
+.panel-head h1 { font-size: 15px; margin: 0; letter-spacing: .5px; font-weight: 600; }
+#collapse {
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  font-size: 14px; padding: 2px 6px;
+}
+.panel-body { padding: 12px 14px 14px; }
+body.panel-collapsed .panel-body { display: none; }
+body.panel-collapsed #panel { width: 180px; }
+
+.status-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 11px; color: var(--muted); margin-bottom: 12px;
+}
+#status { color: var(--accent); }
+.clock { font-variant-numeric: tabular-nums; font-size: 10px; }
+
+section { margin-bottom: 14px; }
+h2 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+  color: var(--muted); margin: 0 0 8px; font-weight: 600;
+}
+
+.row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 0; font-size: 13px; cursor: pointer;
+}
+.row input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; }
+.row .count {
+  margin-left: auto; font-size: 11px; color: var(--muted);
+  background: rgba(255, 255, 255, 0.06); padding: 1px 8px; border-radius: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.row.sub { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; cursor: default; }
+
+select, input {
+  background: rgba(255, 255, 255, 0.06); border: 1px solid var(--panel-border);
+  color: var(--text); border-radius: 8px; padding: 6px 8px; font-size: 12px;
+  width: 100%; margin-top: 4px;
+}
+select { cursor: pointer; }
+
+.loc-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+.loc-grid label { font-size: 10px; color: var(--muted); }
+.btn-row { display: flex; gap: 8px; margin-top: 8px; }
+button {
+  background: rgba(111, 211, 255, 0.15); border: 1px solid rgba(111, 211, 255, 0.35);
+  color: var(--accent); border-radius: 8px; padding: 7px 12px; font-size: 12px;
+  cursor: pointer; flex: 1; transition: background .15s;
+}
+button:hover { background: rgba(111, 211, 255, 0.28); }
+
+.hint { font-size: 10px; color: var(--muted); line-height: 1.5; margin: 8px 0 0; }
+
+#info {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(20px);
+  background: var(--panel); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  border: 1px solid var(--panel-border); border-radius: 12px;
+  padding: 12px 18px; min-width: 220px; max-width: 320px;
+  opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s;
+  font-size: 12px;
+}
+#info.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+#info .info-name { font-size: 15px; font-weight: 600; color: #fff; }
+#info .info-type { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+#info div { display: flex; gap: 8px; padding: 1px 0; }
+#info div span { color: var(--muted); min-width: 70px; }
+
+/* terminal split-flap arrivals board */
+#flightboard {
+  position: fixed; left: 332px; right: 160px; bottom: 0;
+  max-width: 560px;
+  background: linear-gradient(180deg, #0a0802, #0d0a02);
+  border: 1px solid rgba(255, 176, 0, 0.35); border-bottom: none;
+  border-top-left-radius: 10px; border-top-right-radius: 10px;
+  box-shadow: 0 0 30px rgba(0, 0, 0, 0.6);
+  padding: 8px 12px 10px; z-index: 30;
+  font-family: 'DejaVu Sans Mono', 'Consolas', 'Courier New', monospace;
+  color: #ffb000; text-shadow: 0 0 5px rgba(255, 150, 0, 0.55);
+  letter-spacing: 0.5px;
+}
+.fb-titlebar {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 11px; color: #ffcf66; border-bottom: 1px solid rgba(255, 176, 0, 0.25);
+  padding-bottom: 4px; margin-bottom: 4px;
+}
+.fb-brand { font-weight: 700; letter-spacing: 1px; }
+.fb-clock { font-variant-numeric: tabular-nums; color: #ffb000; }
+.fb-sectlabel {
+  font-size: 9px; color: #b87a00; letter-spacing: 2px; margin: 6px 0 2px;
+}
+.fb-colhead, .fb-row {
+  display: grid; grid-template-columns: 70px 50px 76px 54px 38px 50px 1fr;
+  gap: 4px; font-size: 12px; line-height: 1.5; white-space: nowrap;
+}
+.fb-colhead { font-size: 9px; color: #8a5d00; letter-spacing: 1px; }
+.fb-row span { overflow: hidden; text-overflow: clip; }
+.fb-row .fb-flight { font-weight: 700; }
+.fb-dist { color: #d39a3a; }
+.fb-status { font-weight: 700; }
+.fb-now { color: #5dff8b; text-shadow: 0 0 6px rgba(60, 255, 130, 0.6); animation: fbblink 1.4s steps(2, end) infinite; }
+.fb-soon { color: #ffd24a; }
+.fb-closest { background: rgba(255, 176, 0, 0.10); border-left: 2px solid #5dff8b; }
+.fb-closest .fb-status { color: #5dff8b; }
+.fb-empty { font-size: 11px; color: #7a5300; padding: 2px 0; }
+.fb-sectlabel.fb-sat { color: #7CFFB2; }
+.fb-satrow .fb-flight { color: #9effc8; text-shadow: 0 0 5px rgba(124, 255, 178, 0.5); }
+/* category tints on the flight code */
+.fb-row.fb-law .fb-flight { color: #6aa8ff; text-shadow: 0 0 5px rgba(80,140,255,.6); }
+.fb-row.fb-mil .fb-flight { color: #5ef0a0; text-shadow: 0 0 5px rgba(90,240,160,.6); }
+.fb-row.fb-ems .fb-flight { color: #ff7b7b; text-shadow: 0 0 5px rgba(255,100,100,.6); }
+@keyframes fbblink { 0%, 60% { opacity: 1; } 61%, 100% { opacity: 0.45; } }
+body.kiosk #flightboard { left: 16px; }   /* panel hidden in kiosk, reclaim the space */
+
+/* keep the WebXR buttons clear of the board */
+#VRButton, #ARButton { bottom: 16px !important; }
+
+/* compass rose */
+#compass {
+  position: fixed; right: 18px; bottom: 14px; width: 118px; height: 150px;
+  z-index: 20; -webkit-user-select: none; user-select: none; touch-action: none;
+}
+#compass::before {
+  content: ''; position: absolute; top: 0; left: 0; width: 118px; height: 118px;
+  border-radius: 50%; background: rgba(10, 16, 26, 0.6);
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+}
+#compass-ring { position: absolute; top: 0; left: 0; width: 118px; height: 118px; transition: transform .08s linear; }
+#compass.editable { cursor: grab; }
+#compass.editable:active { cursor: grabbing; }
+#compass-needle {
+  position: absolute; top: -3px; left: 59px; transform: translateX(-50%);
+  width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent;
+  border-bottom: 13px solid var(--accent); filter: drop-shadow(0 0 3px var(--accent));
+}
+#compass-read {
+  position: absolute; bottom: 8px; left: 0; width: 118px; text-align: center;
+  font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums;
+}
+#compass-minus, #compass-plus {
+  position: absolute; bottom: 2px; width: 24px; height: 24px; border-radius: 50%;
+  padding: 0; font-size: 15px; line-height: 1; flex: none;
+}
+#compass-minus { left: 2px; } #compass-plus { right: 2px; }
+#compass:not(.editable) #compass-minus, #compass:not(.editable) #compass-plus { opacity: .3; pointer-events: none; }
+
+#errlog {
+  display: none; position: fixed; right: 12px; top: 12px; max-width: 60vw;
+  max-height: 90vh; overflow: auto; z-index: 99;
+  background: rgba(40, 0, 0, 0.85); color: #ff9b9b; border: 1px solid #a33;
+  border-radius: 8px; padding: 12px; font: 11px/1.4 monospace; white-space: pre-wrap;
+}
+
+input[type="range"] { width: 100%; accent-color: var(--accent); margin-top: 6px; }
+
+.unit-btn { font-size: 11px; padding: 6px 0; }
+.unit-btn.active { background: rgba(111, 211, 255, 0.32); border-color: var(--accent); color: #fff; }
+
+.chips { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px; }
+.chips label {
+  display: flex; align-items: center; gap: 6px; font-size: 12px;
+  color: var(--text); cursor: pointer; padding: 3px 0;
+}
+.chips input { width: 14px; height: 14px; accent-color: var(--accent); }
+
+#calib { margin: 4px 0 2px; }
+#calib summary {
+  cursor: pointer; font-size: 12px; color: var(--accent);
+  padding: 4px 0; -webkit-user-select: none; user-select: none;
+}
+
+body.kiosk #panel { display: none; }
+
+/* WebXR buttons (injected by three.js) — place VR and AR side by side */
+#VRButton { border-radius: 8px !important; transform: translateX(-82px); }
+#ARButton { border-radius: 8px !important; transform: translateX(82px); }
+body.kiosk #VRButton, body.kiosk #ARButton { display: none !important; }

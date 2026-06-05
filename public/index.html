@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LivelySky — Live Sky</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+      "satellite.js": "https://cdn.jsdelivr.net/npm/satellite.js@5.0.0/+esm",
+      "astronomy-engine": "https://cdn.jsdelivr.net/npm/astronomy-engine@2.1.19/+esm"
+    }
+  }
+  </script>
+</head>
+<body>
+  <canvas id="view"></canvas>
+
+  <div id="panel">
+    <div class="panel-head">
+      <h1>LivelySky</h1>
+      <button type="button" id="collapse" title="Collapse">⟨⟩</button>
+    </div>
+
+    <div class="panel-body">
+      <div class="status-row">
+        <span id="status">Starting…</span>
+        <span id="clock" class="clock"></span>
+      </div>
+
+      <section>
+        <h2>Layers</h2>
+        <label class="row"><input type="checkbox" id="toggle-aircraft" /> ✈ Aircraft
+          <span class="count" id="count-aircraft">0</span></label>
+        <label class="row"><input type="checkbox" id="toggle-satellites" /> 🛰 Satellites
+          <span class="count" id="count-satellites">0</span></label>
+        <label class="row"><input type="checkbox" id="toggle-planets" /> 🪐 Planets / Sun / Moon</label>
+        <label class="row"><input type="checkbox" id="toggle-stars" /> ✦ Stars
+          <span class="count" id="count-stars">0</span></label>
+
+        <label class="row sub">Satellite set
+          <select id="sat-group">
+            <option value="visual">Brightest (visual)</option>
+            <option value="stations">Space stations (ISS)</option>
+            <option value="starlink">Starlink</option>
+            <option value="gps-ops">GPS</option>
+            <option value="science">Science</option>
+            <option value="weather">Weather</option>
+            <option value="active">All active</option>
+          </select>
+        </label>
+      </section>
+
+      <section>
+        <h2>Aircraft range</h2>
+        <label class="row sub">Distance
+          <input type="range" id="range" min="25" max="600" step="5" value="250" />
+          <span class="count" id="range-val">155 mi</span>
+        </label>
+        <div class="btn-row" id="unit-row">
+          <button type="button" id="unit-mi" class="unit-btn active">Miles</button>
+          <button type="button" id="unit-km" class="unit-btn">Km</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Labels</h2>
+        <label class="row"><input type="checkbox" id="label-aircraft" /> Flight info (type · route)</label>
+        <label class="row"><input type="checkbox" id="label-stars" /> Bright star names</label>
+      </section>
+
+      <section>
+        <h2>Graphics</h2>
+        <label class="row"><input type="checkbox" id="toggle-navlights" /> Aircraft nav lights</label>
+        <label class="row"><input type="checkbox" id="toggle-weather" /> Live weather / clouds</label>
+        <label class="row"><input type="checkbox" id="toggle-ground" /> Solid ground fill</label>
+        <label class="row"><input type="checkbox" id="toggle-bloom" /> Glow / bloom
+          <span class="count" title="May flicker on some GPUs">beta</span></label>
+      </section>
+
+      <section>
+        <h2>Label fields <span class="count">aircraft</span></h2>
+        <div class="chips">
+          <label><input type="checkbox" data-field="route" /> Route</label>
+          <label><input type="checkbox" data-field="type" /> Type</label>
+          <label><input type="checkbox" data-field="altitude" /> Altitude</label>
+          <label><input type="checkbox" data-field="speed" /> Speed</label>
+          <label><input type="checkbox" data-field="heading" /> Heading</label>
+          <label><input type="checkbox" data-field="squawk" /> Squawk</label>
+          <label><input type="checkbox" data-field="registration" /> Reg</label>
+          <label><input type="checkbox" data-field="vrate" /> V/S</label>
+        </div>
+        <p class="hint">Callsign always shown. Turn on “Flight info” under Labels to display them.</p>
+      </section>
+
+      <section>
+        <h2>Display / Projection</h2>
+        <label class="row sub">Mode
+          <select id="display-mode">
+            <option value="free">Free look (screen)</option>
+            <option value="ceiling">Overhead (ceiling)</option>
+            <option value="fisheye">Fisheye dome 180° (ceiling)</option>
+          </select>
+        </label>
+        <label class="row sub">Zoom
+          <input type="range" id="zoom" min="0.4" max="6" step="0.02" value="1" />
+          <span class="count" id="zoom-val">1.0×</span>
+        </label>
+        <label class="row sub" id="north-row">North at top
+          <input type="range" id="north" min="0" max="359" step="1" value="0" />
+          <span class="count" id="north-val">0°</span>
+        </label>
+        <label class="row"><input type="checkbox" id="toggle-autonorth" /> Auto-North (compass)</label>
+
+        <details id="calib">
+          <summary>Ceiling alignment (fisheye)</summary>
+          <label class="row sub">Offset X
+            <input type="range" id="cal-offx" min="-1" max="1" step="0.01" value="0" />
+            <span class="count" id="cal-offx-val">0.00</span>
+          </label>
+          <label class="row sub">Offset Y
+            <input type="range" id="cal-offy" min="-1" max="1" step="0.01" value="0" />
+            <span class="count" id="cal-offy-val">0.00</span>
+          </label>
+          <label class="row sub">Field of view
+            <input type="range" id="cal-fov" min="120" max="220" step="1" value="180" />
+            <span class="count" id="cal-fov-val">180°</span>
+          </label>
+          <label class="row"><input type="checkbox" id="cal-mirror" /> Mirror (ceiling bounce)</label>
+        </details>
+
+        <div class="btn-row">
+          <button type="button" id="fullscreen-btn">Fullscreen / kiosk</button>
+        </div>
+        <p class="hint">Ceiling modes: point the projector straight up at a flat ceiling and lie beneath it. Fisheye maps the whole sky hemisphere (zenith = centre, horizon = edge). Use alignment to fit and centre the disc.</p>
+      </section>
+
+      <section>
+        <h2>Your location</h2>
+        <form id="loc-form">
+          <div class="loc-grid">
+            <label>Lat <input id="lat" type="number" step="0.0001" /></label>
+            <label>Lon <input id="lon" type="number" step="0.0001" /></label>
+            <label>Alt(m) <input id="alt" type="number" step="1" /></label>
+          </div>
+          <div class="btn-row">
+            <button type="submit">Set</button>
+            <button type="button" id="geo-btn">Use my location</button>
+          </div>
+        </form>
+      </section>
+
+      <p class="hint">Drag to look around · scroll to zoom. Data: OpenSky, CelesTrak — free.</p>
+    </div>
+  </div>
+
+  <div id="info"></div>
+
+  <!-- Terminal-style arrivals board: what's overhead now and coming over soon -->
+  <div id="flightboard"></div>
+
+  <!-- Compass rose: shows true bearings; drag (or use ± / arrow keys) to fine-tune
+       the orientation when projecting. -->
+  <div id="compass" title="Drag to set orientation">
+    <svg id="compass-ring" viewBox="-100 -100 200 200" width="118" height="118"></svg>
+    <div id="compass-needle"></div>
+    <div id="compass-read">0° N</div>
+    <button type="button" id="compass-minus" title="-1°">‹</button>
+    <button type="button" id="compass-plus" title="+1°">›</button>
+  </div>
+
+  <pre id="errlog"></pre>
+
+  <script>
+    // Surface any module/runtime error on-screen for debugging.
+    window.addEventListener('error', (e) => {
+      const el = document.getElementById('errlog');
+      el.style.display = 'block';
+      el.textContent += `\n${e.message}\n  ${e.filename}:${e.lineno}:${e.colno}\n${e.error?.stack || ''}\n`;
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+      const el = document.getElementById('errlog');
+      el.style.display = 'block';
+      el.textContent += `\nPromise: ${e.reason?.message || e.reason}\n${e.reason?.stack || ''}\n`;
+    });
+  </script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
