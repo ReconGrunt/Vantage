@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Model inspect</title>
+  <style>html,body{margin:0;height:100%;background:#10141c;overflow:hidden;font-family:monospace;color:#cfe}</style>
+  <script type="importmap">
+  { "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  } }
+  </script>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+    import { loadModels } from './js/assets.js';
+
+    const renderer = new THREE.WebGLRenderer({ canvas: c, antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x10141c);
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+    const cam = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.01, 100);
+    cam.position.set(0.01, 14, 0.01);   // top-down: read nose yaw vs +X(red)/+Z(blue)
+    cam.up.set(0, 0, -1);
+    const controls = new OrbitControls(cam, renderer.domElement);
+    controls.target.set(0, 0, 0);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    const sun = new THREE.DirectionalLight(0xffffff, 2); sun.position.set(5, 8, 5); scene.add(sun);
+
+    // axis legend: red=+X, green=+Y, blue=+Z. Nose should end up at -Z (toward -blue).
+    const order = ['airliner','jumbo','bizjet','cessna','heli','fighter','iss','satellite'];
+
+    function label(text, x, z) {
+      const cv = document.createElement('canvas'); cv.width = 256; cv.height = 64;
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fillRect(0, 0, 256, 64);
+      ctx.fillStyle = '#9fe'; ctx.font = 'bold 32px monospace';
+      ctx.textAlign = 'center'; ctx.fillText(text, 128, 44);
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), depthTest: false }));
+      sp.position.set(x, 1.2, z); sp.scale.set(2.0, 0.5, 1); scene.add(sp); // ON the model
+    }
+
+    const models = await loadModels();
+    order.forEach((key, i) => {
+      const col = i % 3, row = Math.floor(i / 3);
+      const x = (col - 1) * 3.2, z = (row - 1) * 3.2;
+      const m = models[key];
+      if (m) { m.position.set(x, 0, z); m.scale.multiplyScalar(1.7); scene.add(m); }
+      // yellow arrow = desired NOSE direction (-Z, toward top of screen)
+      const arrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(x, 0.2, z), 1.5, 0xffd000, 0.4, 0.25);
+      scene.add(arrow);
+      label(key, x, z);
+    });
+
+    renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, cam); });
+    addEventListener('resize', () => {
+      cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+  </script>
+</body>
+</html>

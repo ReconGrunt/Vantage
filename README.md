@@ -138,6 +138,26 @@ Open the app in the Quest browser and use the on-screen buttons:
 
 WebXR is only enabled while a session is active, so desktop/projector rendering is unaffected.
 
+## 3D model credits (CC-BY 3.0)
+
+Per-type aircraft and satellite models are self-hosted in `public/models/`,
+sourced from **Poly Pizza** under CC-BY 3.0 (plus a low-poly ISS). Attribution:
+
+```
+"Airplane", "Jet" (bizjet), "Satellite", low-poly "International Space Station" — Poly by Google
+"Boeing 747" — Miha Lunar
+"Jet" (fighter) — jeremy
+"Helicopter" — jeremy
+"Small plane" (cessna) — Eik Røgeberg
+all via Poly Pizza (https://poly.pizza), licensed under CC-BY 3.0
+```
+
+Aircraft are matched to a model by ICAO type code (see `modelKeyFor` in
+`public/js/aircraft.js`): airliner, 747 jumbo, business jet, GA prop, helicopter,
+or stealth fighter (military). Satellites use a generic comms-sat model, with the
+ISS getting its own model. `public/model-view.html` is a dev page that lays out
+every model for orientation calibration.
+
 ## Roadmap to the TV / VR targets
 
 - **Projector / kiosk** — works now: run Chromium fullscreen at `localhost:3000`.

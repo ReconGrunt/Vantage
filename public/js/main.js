@@ -19,6 +19,7 @@ import { CloudLayer } from './clouds.js';
 import { NavLights } from './navlights.js';
 import { FlightBoard } from './flightboard.js';
 import { FisheyeDome } from './fisheye.js';
+import { loadModels } from './assets.js';
 import { DEG } from './coords.js';
 import { initUI } from './ui.js';
 
@@ -123,6 +124,12 @@ const clouds = new CloudLayer(scene);
 const navLights = new NavLights(scene, layers.aircraft.geo);
 const flightBoard = new FlightBoard();
 
+// Load the real glTF models once, then hand them to the layers that use them.
+loadModels().then((m) => {
+  layers.aircraft.setModels(m);
+  layers.satellites.setModels?.(m);
+});
+
 const fisheye = new FisheyeDome(768);
 scene.add(fisheye.cubeCam);
 
@@ -159,14 +166,20 @@ function pick() {
   if (state.layers.planets) targets.push(...layers.planets.pickables.filter((o) => o.visible));
   if (state.layers.aircraft) targets.push(...layers.aircraft.pickables());
   if (state.layers.satellites && layers.satellites.points) targets.push(layers.satellites.points);
-  const hits = raycaster.intersectObjects(targets, false);
+  const hits = raycaster.intersectObjects(targets, true); // recursive: models are groups
   const hit = hits.length ? hits[0] : null;
   hovered = hit ? hit.object : null;
 
   let data = null;
   if (hit) {
-    if (hit.object === layers.satellites.points) data = layers.satellites.pickInfo(hit.index);
-    else { data = hit.object.userData; if (data?.entry) layers.aircraft.requestEnrich(data.entry); }
+    if (hit.object === layers.satellites.points) {
+      data = layers.satellites.pickInfo(hit.index);
+    } else {
+      let o = hit.object;                          // climb to the object carrying userData
+      while (o && !o.userData?.kind) o = o.parent;
+      data = o?.userData || null;
+      if (data?.entry) layers.aircraft.requestEnrich(data.entry);
+    }
   }
   hoveredData = data;
   ui.showInfo(data || pinned);
@@ -304,6 +317,7 @@ renderer.setAnimationLoop((t) => {
   if (state.layers.stars) layers.stars.update(state.observer, d, elapsed);
   layers.planets.update(state.observer, d); // always (drives sun light)
   if (state.layers.satellites) layers.satellites.update(state.observer, d);
+  layers.aircraft.ceilingMode = state.display !== 'free'; // low-flyover drama overhead
   if (state.layers.aircraft) layers.aircraft.update(state.observer, t);
   navLights.setVisible(state.navlights && state.layers.aircraft);
   if (state.navlights && state.layers.aircraft) {

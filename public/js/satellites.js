@@ -6,6 +6,11 @@ import * as THREE from 'three';
 import * as satellite from 'satellite.js';
 import { domePosition, DEG } from './coords.js';
 import { SHELLS, makeTextSprite } from './sky.js';
+import { instantiate } from './assets.js';
+
+const SAT_POOL = 36;     // how many sats get a 3D model (closest/highest)
+const SAT_SIZE = 16;     // world size of a generic satellite model
+const ISS_SIZE = 28;     // the ISS is bigger/iconic
 
 export class SatelliteLayer {
   constructor(scene) {
@@ -29,10 +34,34 @@ export class SatelliteLayer {
     this.group.add(this.highlightLabel);
 
     this.visibleSats = []; // parallel to point positions, for picking
+    this.models = null;
+    this.issMesh = null;
+    this.satPool = [];     // reusable generic-satellite model clones
     scene.add(this.group);
   }
 
   setVisible(v) { this.group.visible = v; }
+
+  // Give satellites real shapes: the ISS uses the ISS model, others a generic
+  // comms-sat model (pooled). Distant sats are still just glowing points.
+  setModels(models) {
+    this.models = models;
+    if (models.iss) {
+      this.issMesh = instantiate(models.iss);
+      this.issMesh.scale.setScalar(ISS_SIZE);
+      this.issMesh.visible = false;
+      this.group.add(this.issMesh);
+    }
+    if (models.satellite) {
+      for (let i = 0; i < SAT_POOL; i++) {
+        const m = instantiate(models.satellite);
+        m.scale.setScalar(SAT_SIZE);
+        m.visible = false;
+        this.satPool.push(m);
+        this.group.add(m);
+      }
+    }
+  }
 
   async load(group = 'visual') {
     this.group_name = group;
@@ -79,19 +108,20 @@ export class SatelliteLayer {
       const v = pv.velocity;
       const speed = v ? Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z) : null;
 
+      const isISS = /ISS|ZARYA/i.test(name);
       this.visibleSats.push({
         name, azimuth: azDeg, altitude: altDeg, rangeKm: look.rangeSat,
-        heightKm: gd.height, speedKmS: speed, satrec,
+        heightKm: gd.height, speedKmS: speed, satrec, pos: p, isISS,
       });
 
-      if (/ISS|ZARYA/i.test(name)) {
-        issPos = { p, name, heightKm: gd.height, speed };
-      }
+      if (isISS) issPos = { p, name, heightKm: gd.height, speed };
     }
 
     this.geom.setAttribute('position',
       new THREE.BufferAttribute(new Float32Array(positions), 3));
     this.geom.computeBoundingSphere();
+
+    this._placeModels(date);
 
     if (issPos) {
       this.highlightLabel.visible = true;
@@ -101,6 +131,28 @@ export class SatelliteLayer {
       this._setLabel(txt);
     } else {
       this.highlightLabel.visible = false;
+    }
+  }
+
+  // Position the 3D satellite models: the ISS gets its own model; the highest
+  // (most prominent) sats get pooled generic comms-sat models. The rest stay as
+  // glowing points.
+  _placeModels(date) {
+    if (!this.models) return;
+    const t = (date.getTime() % 1e7) / 1000;
+    if (this.issMesh) {
+      const iss = this.visibleSats.find((s) => s.isISS);
+      this.issMesh.visible = !!iss;
+      if (iss) { this.issMesh.position.copy(iss.pos); this.issMesh.rotation.y = t * 0.12; }
+    }
+    if (this.satPool.length) {
+      const others = this.visibleSats.filter((s) => !s.isISS).sort((a, b) => b.altitude - a.altitude);
+      for (let i = 0; i < this.satPool.length; i++) {
+        const m = this.satPool[i];
+        const s = others[i];
+        m.visible = !!s;
+        if (s) { m.position.copy(s.pos); m.rotation.set(0.4, t * 0.25 + i, 0); }
+      }
     }
   }
 

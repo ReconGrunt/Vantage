@@ -11,12 +11,28 @@ import { lookAngles, domePosition, azAltToVector, DEG } from './coords.js';
 import { SHELLS, makeTextSprite } from './sky.js';
 import { buildAirliner, buildHelicopter, aircraftMaterial } from './plane-model.js';
 import { classify, isHelicopter, CATEGORY } from './classify.js';
+import { instantiate } from './assets.js';
+
+// Map an aircraft to the best-matching 3D model by service + ICAO type code.
+function modelKeyFor(entry) {
+  if (entry.isHeli) return 'heli';
+  if (entry.category === 'mil') return 'fighter';
+  const t = (entry.info?.aircraft?.type || '').toUpperCase();
+  if (!t) return 'airliner';
+  if (/B74|747|B77|777|B78|787|A38|A380|A35|A350|A34|A340|A33|A330|MD11|L101|DC10|B76|767|A300|IL96|B74R/.test(t)) return 'jumbo';
+  if (/GLF|GULF|\bLJ\d|LEAR|C25|C500|C525|C550|C560|C56X|C650|C680|C68A|C700|C750|CL30|CL35|CL60|CL65|CHALLENG|CITATION|E45|E50|E55|PHENOM|LEGACY|H25|HS25|\bFA\d|F2TH|F900|FALCON|BE40|BE4|PRM1|EA50|SF50|GALX|G150|G280|GL5T|GL7T|HDJT/.test(t)) return 'bizjet';
+  if (/C72|C82|C150|C152|C162|C170|C175|C177|C180|C182|C185|C206|C210|\bP28|PA2|PA3|PA4|SR2|SR20|SR22|DA40|DA42|DA20|BE33|BE35|BE36|BE19|BE23|M20|PC12|TBM|PIPER|CIRRUS|CESSNA|DV20|RV\d/.test(t)) return 'cessna';
+  return 'airliner';
+}
 
 const POLL_MS = 12_000;
 const PLANE_SCALE = 22;        // initial only; real size is computed per-frame
 const HELI_SCALE = 16;
 const PLANE_LEN_M = 40;        // representative airframe length/wingspan (m)
 const HELI_LEN_M = 16;
+const VIS_BOOST = 7;           // planetarium magnification so aircraft are visible
+const VIS_MIN = 9;            // distant aircraft never shrink below this
+const VIS_MAX = 55;          // close/low aircraft capped here
 const TRAIL_MAX = 48;          // trail nodes
 const TRAIL_DT = 180;          // ms between trail samples
 const CONTRAIL_MIN_ALT = 7600; // m (~25,000 ft) — contrails only form up high
@@ -29,16 +45,19 @@ export class AircraftLayer {
     this.observer = null;
     this.showLabels = false;
 
-    // two shared geometries (fixed-wing + rotary)
+    // fallback procedural geometries (used until the glTF models finish loading,
+    // or if a model is missing)
     this.geo = { plane: buildAirliner(), heli: buildHelicopter() };
+    this.models = null; // filled async with real per-type glTF models
 
-    // one shared material + trail per service category (cheap, lets us colour-code)
+    // trail colour per service category; fallback material per category
     this.mat = {};
     this.trailMat = {};
     for (const [key, c] of Object.entries(CATEGORY)) {
       this.mat[key] = aircraftMaterial({ color: c.color, emissive: c.emissive, emissiveIntensity: c.ei });
       this.trailMat[key] = makeTrailMaterial(c.trail);
     }
+
 
     // which fields appear on the on-dome labels (callsign is always shown)
     this.labelFields = {
@@ -51,6 +70,12 @@ export class AircraftLayer {
   }
 
   setVisible(v) { this.group.visible = v; }
+
+  // Called once the real glTF models finish loading; upgrades every plane.
+  setModels(models) {
+    this.models = models;
+    for (const [, e] of this.planes) this._applyModel(e, true);
+  }
 
   setLabels(on) {
     this.showLabels = on;
@@ -90,11 +115,6 @@ export class AircraftLayer {
   }
 
   _spawn(a) {
-    const mesh = new THREE.Mesh(this.geo.plane, this.mat.civ);
-    mesh.scale.setScalar(PLANE_SCALE);
-    mesh.frustumCulled = false;
-    this.group.add(mesh);
-
     // trail
     const tgeo = new THREE.BufferGeometry();
     tgeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_MAX * 3), 3));
@@ -110,34 +130,46 @@ export class AircraftLayer {
 
     const entry = {
       id: a.id,
-      mesh, trail, label,
-      history: [],            // {pos:Vector3, t}
-      lastTrail: 0,
+      mesh: null, trail, label,
+      history: [], lastTrail: 0,
       info: null, enriching: false,
-      category: 'civ', isHeli: false,
+      category: 'civ', isHeli: false, modelKey: null,
+      state: a,
     };
     this.planes.set(a.id, entry);
 
-    // Immediate classification from what we already know (ICAO24 → US military).
-    entry.state = a;
+    // Immediate classification (ICAO24 → US military) + build the mesh.
     this._reclassify(entry);
-    // Everyone gets enriched in the background so we can colour-code by operator.
-    this._enrichQueue.push(entry);
+    this._enrichQueue.push(entry);  // enrich in background for type/operator
     return entry;
   }
 
-  // Decide category + heli from current state/info and update the visuals.
+  // Decide category + heli from current state/info, then ensure the right model.
   _reclassify(entry) {
-    const cat = classify(entry.state, entry.info);
-    const heli = isHelicopter(entry.info);
-    if (cat === entry.category && heli === entry.isHeli && entry._appliedOnce) return;
-    entry.category = cat;
-    entry.isHeli = heli;
-    entry._appliedOnce = true;
-    entry.mesh.geometry = heli ? this.geo.heli : this.geo.plane;
-    entry.mesh.scale.setScalar(heli ? HELI_SCALE : PLANE_SCALE);
-    entry.mesh.material = this.mat[cat];
-    entry.trail.material = this.trailMat[cat];
+    entry.category = classify(entry.state, entry.info);
+    entry.isHeli = isHelicopter(entry.info);
+    entry.trail.material = this.trailMat[entry.category] || this.trailMat.civ;
+    this._applyModel(entry);
+  }
+
+  // Swap in the correct per-type model (real glTF if loaded, else procedural).
+  _applyModel(entry, force = false) {
+    const key = modelKeyFor(entry);
+    const usingGlb = !!(this.models && this.models[key]);
+    if (!force && entry.mesh && entry.modelKey === key && entry._glb === usingGlb) return;
+    entry.modelKey = key;
+    entry._glb = usingGlb;
+
+    if (entry.mesh) this.group.remove(entry.mesh);
+    let mesh;
+    if (usingGlb) {
+      mesh = instantiate(this.models[key]);   // real model, nose at -Z, unit size
+    } else {
+      mesh = new THREE.Mesh(this.geo[entry.isHeli ? 'heli' : 'plane'], this.mat[entry.category]);
+    }
+    mesh.frustumCulled = false;
+    this.group.add(mesh);
+    entry.mesh = mesh;
   }
 
   _despawn(id, entry) {
@@ -167,13 +199,20 @@ export class AircraftLayer {
       const pos = domePosition(look.azimuth, look.altitude, SHELLS.aircraft);
       entry.mesh.position.copy(pos);
 
-      // True angular size: an object of length L at slant range D subtends L/D
-      // radians; on a dome of radius R that's a world size of R·L/D. So distant
-      // aircraft are correctly tiny and only the close/low ones look large — just
-      // like standing outside. Nav lights (point sources) keep them visible.
+      // Size scales with distance (closer/lower = bigger, like real life) but is
+      // magnified for visibility and floored so distant traffic stays readable —
+      // a planetarium convention rather than true (invisible) angular size.
       const lenM = entry.isHeli ? HELI_LEN_M : PLANE_LEN_M;
-      const sc = THREE.MathUtils.clamp(SHELLS.aircraft * lenM / Math.max(look.range, 1), 0.9, 46);
-      entry.mesh.scale.setScalar(sc);
+      let sc = SHELLS.aircraft * lenM * VIS_BOOST / Math.max(look.range, 1);
+      let cap = VIS_MAX;
+      // Ceiling/fisheye projection: as a plane crosses near the zenith, swell it
+      // into a dramatic low flyover sweeping across the ceiling.
+      if (this.ceilingMode) {
+        const f = THREE.MathUtils.smoothstep(look.altitude, 35, 80);
+        sc *= 1 + f * 3.5;
+        cap = 190;
+      }
+      entry.mesh.scale.setScalar(THREE.MathUtils.clamp(sc, VIS_MIN, cap));
 
       // Orient nose (-Z) along direction of travel on the dome.
       const ahead = deadReckon(projected, s.velocity || 0, s.heading || 0, 4);
