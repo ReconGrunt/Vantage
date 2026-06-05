@@ -259,8 +259,11 @@ function applyZoom() {
   if (state.display === 'fisheye') {
     fisheye.setCalibration({ scale: z });
   } else {
-    const base = state.display === 'ceiling' ? 125 : 68;
-    camera.fov = THREE.MathUtils.clamp(base / z, 12, 135);
+    // Free look at 1x ≈ a natural ~58° human field of view (standing outside,
+    // looking up). Aircraft are drawn at true angular size, so this matches what
+    // you'd actually see; zoom narrows the FOV to magnify.
+    const base = state.display === 'ceiling' ? 125 : 58;
+    camera.fov = THREE.MathUtils.clamp(base / z, 8, 135);
     camera.updateProjectionMatrix();
   }
 }
@@ -303,7 +306,11 @@ renderer.setAnimationLoop((t) => {
   if (state.layers.satellites) layers.satellites.update(state.observer, d);
   if (state.layers.aircraft) layers.aircraft.update(state.observer, t);
   navLights.setVisible(state.navlights && state.layers.aircraft);
-  if (state.navlights && state.layers.aircraft) navLights.update(layers.aircraft.planes, elapsed);
+  if (state.navlights && state.layers.aircraft) {
+    const night = THREE.MathUtils.clamp(-layers.planets.sunAltitude / 8, 0, 1);
+    const cloud = state.weather ? clouds.currentCoverage : 0;
+    navLights.update(layers.aircraft.planes, elapsed, night, cloud);
+  }
 
   // sun-driven lighting
   const sunDir = layers.planets.sunDir;

@@ -13,8 +13,10 @@ import { buildAirliner, buildHelicopter, aircraftMaterial } from './plane-model.
 import { classify, isHelicopter, CATEGORY } from './classify.js';
 
 const POLL_MS = 12_000;
-const PLANE_SCALE = 22;
+const PLANE_SCALE = 22;        // initial only; real size is computed per-frame
 const HELI_SCALE = 16;
+const PLANE_LEN_M = 40;        // representative airframe length/wingspan (m)
+const HELI_LEN_M = 16;
 const TRAIL_MAX = 48;          // trail nodes
 const TRAIL_DT = 180;          // ms between trail samples
 const CONTRAIL_MIN_ALT = 7600; // m (~25,000 ft) — contrails only form up high
@@ -164,6 +166,14 @@ export class AircraftLayer {
 
       const pos = domePosition(look.azimuth, look.altitude, SHELLS.aircraft);
       entry.mesh.position.copy(pos);
+
+      // True angular size: an object of length L at slant range D subtends L/D
+      // radians; on a dome of radius R that's a world size of R·L/D. So distant
+      // aircraft are correctly tiny and only the close/low ones look large — just
+      // like standing outside. Nav lights (point sources) keep them visible.
+      const lenM = entry.isHeli ? HELI_LEN_M : PLANE_LEN_M;
+      const sc = THREE.MathUtils.clamp(SHELLS.aircraft * lenM / Math.max(look.range, 1), 0.9, 46);
+      entry.mesh.scale.setScalar(sc);
 
       // Orient nose (-Z) along direction of travel on the dome.
       const ahead = deadReckon(projected, s.velocity || 0, s.heading || 0, 4);

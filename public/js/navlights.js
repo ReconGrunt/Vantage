@@ -40,8 +40,11 @@ export class NavLights {
   setVisible(v) { this.enabled = v; this.group.visible = v; }
 
   // planes: Map of aircraft entries (each with .mesh, .state, .isHeli, .id)
-  update(planes, tSec) {
+  // night: 0 (day) .. 1 (full dark)   cloud: 0..1 cover (drives light scatter)
+  update(planes, tSec, night = 0, cloud = 0) {
     if (!this.enabled || !this.group.visible) return;
+    this.night = night;
+    this.cloud = cloud;
     const pos = this.geo.attributes.position.array;
     const col = this.geo.attributes.color.array;
     const siz = this.geo.attributes.size.array;
@@ -98,6 +101,25 @@ export class NavLights {
       out.push([0, bb.min.y * 0.9, 0, 1.0, 0.08, 0.08, 4.5]);  // belly beacon
     }
     if (alt < 2500) out.push([0, yMid, zNose, 1.5, 1.5, 1.3, 7.0]); // landing lights, low only
+
+    // Night fog/landing-light glow. At night every aircraft throws a forward
+    // light glint; when it's flying through cloud (overcast + within the cloud
+    // band) the light scatters into a big soft halo — so you can see it lighting
+    // up the cloud overhead even when the airframe itself is hidden.
+    const night = this.night || 0, cloud = this.cloud || 0;
+    if (night > 0.04) {
+      const band = alt < 8000 ? 1 : 0.3;              // typical cloud layer
+      const scatter = cloud * band;
+      const nb = night;
+      out.push([0, yMid * 0.5, zNose * 0.8, 1.1 * nb, 1.0 * nb, 0.85 * nb, 7 + nb * 3]);
+      if (scatter > 0.05) {
+        const gb = 0.18 * nb + scatter * 0.85;        // glow brightness
+        const gs = Math.min(20 + scatter * 46, 60);   // glow size (px), capped for GPU
+        out.push([0, yMid, 0, gb, gb, gb * 1.05, gs]);
+        out.push([bb.max.x * 0.35, yMid, 0, gb * 0.55, gb * 0.55, gb * 0.6, gs * 0.55]);
+        out.push([bb.min.x * 0.35, yMid, 0, gb * 0.55, gb * 0.55, gb * 0.6, gs * 0.55]);
+      }
+    }
     return out;
   }
 }
