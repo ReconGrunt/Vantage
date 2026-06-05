@@ -1,6 +1,6 @@
 // ui.js — overlay panel: layer toggles, observer location, clock, object info.
 
-export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, onBloomToggle, onNavToggle, onWeatherToggle, onGroundToggle, onLabelFields, onDisplayChange, onNorthChange, onZoom, onAutoNorth, onCalibration, onRange, onSatGroupChange }) {
+export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, onBloomToggle, onAtcToggle, onNavToggle, onWeatherToggle, onGroundToggle, onLabelFields, onDisplayChange, onNorthChange, onZoom, onAutoNorth, onCalibration, onRange, onSatGroupChange }) {
   const $ = (id) => document.getElementById(id);
 
   // layer toggles
@@ -33,6 +33,10 @@ export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, 
   const bloomEl = $('toggle-bloom');
   bloomEl.checked = state.bloom;
   bloomEl.addEventListener('change', () => onBloomToggle(bloomEl.checked));
+
+  const atcEl = $('toggle-atc');
+  atcEl.checked = !!state.atc;
+  atcEl.addEventListener('change', () => onAtcToggle(atcEl.checked));
 
   // label field chips
   const fieldEls = [...document.querySelectorAll('[data-field]')];
@@ -227,6 +231,10 @@ export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, 
       if (i.azimuth != null) add('Azimuth', `${i.azimuth.toFixed(1)}°`);
       const altv = i.altitude_deg ?? i.altitude;
       if (typeof altv === 'number') add('Elevation', `${altv.toFixed(1)}°`);
+      if (data.kind === 'aircraft') {
+        rows.push('<div class="info-path"><span style="color:#ffa033">▬ came from</span>'
+          + '<span style="color:#49d6ff">going to ▬</span></div>');
+      }
       info.innerHTML = rows.join('');
       info.classList.add('show');
     },

@@ -94,6 +94,12 @@ button:hover { background: rgba(111, 211, 255, 0.28); }
 #info .info-type { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
 #info div { display: flex; gap: 8px; padding: 1px 0; }
 #info div span { color: var(--muted); min-width: 70px; }
+#info .info-path {
+  display: flex; justify-content: space-between; gap: 12px;
+  margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--panel-border);
+  font-size: 11px; font-weight: 600;
+}
+#info .info-path span { min-width: 0; }
 
 /* ISS pass alert */
 #iss-alert {
@@ -119,10 +125,12 @@ button:hover { background: rgba(111, 211, 255, 0.28); }
   border: 1px solid rgba(255, 176, 0, 0.35); border-bottom: none;
   border-top-left-radius: 10px; border-top-right-radius: 10px;
   box-shadow: 0 0 30px rgba(0, 0, 0, 0.6);
-  padding: 8px 12px 10px; z-index: 30;
-  font-family: 'DejaVu Sans Mono', 'Consolas', 'Courier New', monospace;
-  color: #ffb000; text-shadow: 0 0 5px rgba(255, 150, 0, 0.55);
-  letter-spacing: 0.5px;
+  padding: 9px 14px 11px; z-index: 30;
+  font-family: 'Consolas', 'Cascadia Mono', 'DejaVu Sans Mono', 'Courier New', monospace;
+  color: #ffc233; text-shadow: 0 0 1px rgba(255, 180, 60, 0.35);
+  letter-spacing: 0.3px;
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+  text-rendering: geometricPrecision;
 }
 .fb-titlebar {
   display: flex; justify-content: space-between; align-items: baseline;
@@ -132,30 +140,61 @@ button:hover { background: rgba(111, 211, 255, 0.28); }
 .fb-brand { font-weight: 700; letter-spacing: 1px; }
 .fb-clock { font-variant-numeric: tabular-nums; color: #ffb000; }
 .fb-sectlabel {
-  font-size: 9px; color: #b87a00; letter-spacing: 2px; margin: 6px 0 2px;
+  font-size: 10px; color: #d18f10; letter-spacing: 2px; margin: 7px 0 2px;
 }
 .fb-colhead, .fb-row {
-  display: grid; grid-template-columns: 70px 50px 76px 54px 38px 50px 1fr;
-  gap: 4px; font-size: 12px; line-height: 1.5; white-space: nowrap;
+  display: grid; grid-template-columns: 72px 50px 78px 56px 40px 52px 1fr;
+  gap: 5px; font-size: 13px; line-height: 1.55; white-space: nowrap;
 }
-.fb-colhead { font-size: 9px; color: #8a5d00; letter-spacing: 1px; }
+.fb-colhead { font-size: 10px; color: #a06f10; letter-spacing: 1px; }
 .fb-row span { overflow: hidden; text-overflow: clip; }
 .fb-row .fb-flight { font-weight: 700; }
 .fb-dist { color: #d39a3a; }
 .fb-status { font-weight: 700; }
-.fb-now { color: #5dff8b; text-shadow: 0 0 6px rgba(60, 255, 130, 0.6); animation: fbblink 1.4s steps(2, end) infinite; }
-.fb-soon { color: #ffd24a; }
+.fb-now { color: #6fff99; text-shadow: 0 0 2px rgba(60, 255, 130, 0.5); animation: fbblink 1.4s steps(2, end) infinite; }
+.fb-soon { color: #ffda5e; }
 .fb-closest { background: rgba(255, 176, 0, 0.10); border-left: 2px solid #5dff8b; }
-.fb-closest .fb-status { color: #5dff8b; }
-.fb-empty { font-size: 11px; color: #7a5300; padding: 2px 0; }
+.fb-closest .fb-status { color: #6fff99; }
+.fb-empty { font-size: 12px; color: #946400; padding: 2px 0; }
 .fb-sectlabel.fb-sat { color: #7CFFB2; }
-.fb-satrow .fb-flight { color: #9effc8; text-shadow: 0 0 5px rgba(124, 255, 178, 0.5); }
+.fb-satrow .fb-flight { color: #a9ffd2; text-shadow: 0 0 1.5px rgba(124, 255, 178, 0.45); }
 /* category tints on the flight code */
-.fb-row.fb-law .fb-flight { color: #6aa8ff; text-shadow: 0 0 5px rgba(80,140,255,.6); }
-.fb-row.fb-mil .fb-flight { color: #5ef0a0; text-shadow: 0 0 5px rgba(90,240,160,.6); }
-.fb-row.fb-ems .fb-flight { color: #ff7b7b; text-shadow: 0 0 5px rgba(255,100,100,.6); }
+.fb-row.fb-law .fb-flight { color: #7db4ff; text-shadow: 0 0 1.5px rgba(80,140,255,.5); }
+.fb-row.fb-mil .fb-flight { color: #6ef5ac; text-shadow: 0 0 1.5px rgba(90,240,160,.5); }
+.fb-row.fb-ems .fb-flight { color: #ff8f8f; text-shadow: 0 0 1.5px rgba(255,100,100,.5); }
 @keyframes fbblink { 0%, 60% { opacity: 1; } 61%, 100% { opacity: 0.45; } }
 body.kiosk #flightboard { left: 16px; }   /* panel hidden in kiosk, reclaim the space */
+
+/* Live ATC "now tuned" chip */
+#atc-chip {
+  position: fixed; right: 16px; bottom: 150px; z-index: 31;
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border-radius: 8px;
+  background: rgba(8, 12, 20, 0.92); border: 1px solid rgba(110, 180, 255, 0.4);
+  box-shadow: 0 0 18px rgba(0, 0, 0, 0.5);
+  font-family: 'Consolas', 'Cascadia Mono', monospace; font-size: 12px;
+  color: #bfe0ff; letter-spacing: 0.3px;
+  -webkit-font-smoothing: antialiased;
+}
+#atc-chip[hidden] { display: none; }
+#atc-chip .atc-dot {
+  width: 9px; height: 9px; border-radius: 50%; background: #59ff9d;
+  box-shadow: 0 0 8px rgba(89, 255, 157, 0.9); flex: none;
+}
+#atc-chip.tuning .atc-dot { background: #ffd24a; box-shadow: 0 0 8px rgba(255, 210, 74, .9); animation: atcpulse 0.9s ease-in-out infinite; }
+#atc-name { font-weight: 600; white-space: nowrap; }
+#atc-vol { width: 64px; accent-color: #6eb4ff; }
+#atc-stop {
+  background: none; border: 1px solid rgba(110, 180, 255, 0.4); color: #bfe0ff;
+  border-radius: 4px; cursor: pointer; font-size: 10px; line-height: 1; padding: 4px 6px;
+}
+#atc-stop:hover { background: rgba(110, 180, 255, 0.15); }
+@keyframes atcpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* ATC towers options list */
+.tower-list { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.tower-row { display: flex; align-items: center; gap: 7px; font-size: 12px; cursor: pointer; }
+.tower-row input { accent-color: #6eb4ff; flex: none; }
 
 /* keep the WebXR buttons clear of the board */
 #VRButton, #ARButton { bottom: 16px !important; }

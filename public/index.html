@@ -79,6 +79,14 @@
         <label class="row"><input type="checkbox" id="toggle-ground" /> Solid ground fill</label>
         <label class="row"><input type="checkbox" id="toggle-bloom" /> Glow / bloom
           <span class="count" title="May flicker on some GPUs">beta</span></label>
+        <label class="row"><input type="checkbox" id="toggle-atc" /> ATC audio on hover
+          <span class="count" title="Live ATC for the nearest major tower (LiveATC.net)">live</span></label>
+      </section>
+
+      <section>
+        <h2>ATC towers <span class="count">horizon</span></h2>
+        <p class="hint">Facilities near you appear on the horizon. Hover one to listen; tick to keep one (or several) playing. Source: LiveATC.net.</p>
+        <div id="tower-list" class="tower-list"><span class="hint">— none in range —</span></div>
       </section>
 
       <section>
@@ -153,7 +161,7 @@
         </form>
       </section>
 
-      <p class="hint">Drag to look around · scroll to zoom. Data: OpenSky, CelesTrak, Open-Meteo, adsbdb — free. 3D models: Poly Pizza (CC-BY 3.0).</p>
+      <p class="hint">Drag to look around · scroll to zoom. Data: adsb.lol, adsb.fi, CelesTrak, Open-Meteo, adsbdb, LiveATC — free. 3D models: Poly Pizza (CC-BY 3.0).</p>
     </div>
   </div>
 
@@ -161,6 +169,14 @@
 
   <!-- ISS pass alert banner (top centre) -->
   <div id="iss-alert"></div>
+
+  <!-- Live ATC "now tuned" chip (LiveATC.net) -->
+  <div id="atc-chip" hidden>
+    <span class="atc-dot"></span>
+    <span id="atc-name">ATC</span>
+    <input type="range" id="atc-vol" min="0" max="1" step="0.05" value="0.8" title="Volume" />
+    <button type="button" id="atc-stop" title="Stop">■</button>
+  </div>
 
   <!-- Terminal-style arrivals board: what's overhead now and coming over soon -->
   <div id="flightboard"></div>

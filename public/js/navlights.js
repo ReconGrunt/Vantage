@@ -54,7 +54,8 @@ export class NavLights {
       if (!e.mesh.visible || n >= this.max) continue;
       e.mesh.updateWorldMatrix(true, false);
       const m = e.mesh.matrixWorld;
-      const bb = e.isHeli ? this.bb.heli : this.bb.plane;
+      // Prefer the actual model's bounding box so lights sit on the real airframe.
+      const bb = e.modelBox || (e.isHeli ? this.bb.heli : this.bb.plane);
       const lights = this._lightsFor(e, bb, tSec);
       for (const L of lights) {
         if (n >= this.max) break;
@@ -79,8 +80,9 @@ export class NavLights {
     const xR = bb.max.x * (heli ? 0.42 : 0.95);
     const yMid = (bb.min.y + bb.max.y) * 0.5;
     const yTop = bb.max.y * 0.9;
-    const zTail = bb.max.z * 0.92;
-    const zNose = bb.min.z * 0.88;
+    // Models face nose = +Z (so lookAt points them forward), tail = -Z.
+    const zNose = bb.max.z * 0.9;
+    const zTail = bb.min.z * 0.92;
     const alt = e.state?.altitude ?? 9999;
 
     const beacon = frac(t / 1.25 + p) < 0.09 ? 1 : 0;          // red flash

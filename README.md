@@ -144,7 +144,7 @@ Per-type aircraft and satellite models are self-hosted in `public/models/`,
 sourced from **Poly Pizza** under CC-BY 3.0 (plus a low-poly ISS). Attribution:
 
 ```
-"Airplane", "Jet" (bizjet), "Satellite", low-poly "International Space Station" — Poly by Google
+"Airplane", "Gulfstream" (bizjet), "Satellite", low-poly "International Space Station" — Poly by Google
 "Boeing 747" — Miha Lunar
 "Jet" (fighter) — jeremy
 "Helicopter" — jeremy

@@ -24,7 +24,7 @@ const FILES = {
 const ORIENT = {
   airliner: [0, 0, 0],
   jumbo: [0, -0.82, 0],          // nose was up-left
-  bizjet: [0, 0, 0],
+  bizjet: [0, Math.PI / 2, 0],   // Gulfstream model: nose was to the right (+X)
   cessna: [0, 0, 0],
   heli: [0, Math.PI / 2, 0],     // nose was to the right (+X)
   fighter: [0, 0, 0],

@@ -1,21 +1,24 @@
-// Plane Projector — local proxy + static server.
+// LivelySky — local proxy + static server.
 //
 // Why a proxy at all? Two reasons:
-//   1. CORS — OpenSky and CelesTrak don't reliably send CORS headers, so the
+//   1. CORS — most of these upstreams don't reliably send CORS headers, so the
 //      browser can't fetch them directly.
-//   2. Rate limits — anonymous OpenSky is heavily throttled. We cache responses
-//      here so many viewers (or a redrawing dome) hit memory, not the network.
+//   2. Rate limits / caching — we cache responses here so many viewers (or a
+//      redrawing dome) hit memory, not the network.
 //
 // All data sources are free and require no key:
-//   - Aircraft:   OpenSky Network  https://opensky-network.org/api
-//   - Satellites: CelesTrak GP/TLE https://celestrak.org/NORAD/elements/
-//
-// Optional: set OPENSKY_USER / OPENSKY_PASS (a free OpenSky account) to lift the
-// anonymous rate limit. Everything works without them, just throttled harder.
+//   - Aircraft:   adsb.lol + adsb.fi (community ADS-B aggregators)
+//   - Satellites: CelesTrak GP/TLE  https://celestrak.org/NORAD/elements/
+//   - Routes/types: adsbdb · Weather: Open-Meteo · ATC audio: LiveATC.net
 
 import express from 'express';
 import path from 'node:path';
+import dns from 'node:dns';
 import { fileURLToPath } from 'node:url';
+
+// Prefer IPv4: some upstreams (e.g. LiveATC edges) advertise AAAA records whose
+// IPv6 path black-holes, making undici's fetch hang on connect while IPv4 is fine.
+dns.setDefaultResultOrder('ipv4first');
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -44,9 +47,56 @@ async function fetchText(url, opts) {
   return res.text();
 }
 
-// --- Aircraft (OpenSky) -----------------------------------------------------
+// --- Aircraft (community ADS-B aggregators) ---------------------------------
 // GET /api/aircraft?lat=..&lon=..&radius=.. (radius in km, default 250)
-// Returns the raw-ish OpenSky "states" mapped into named objects.
+//
+// Source: adsb.lol with adsb.fi as a fallback — both free, no key, and far more
+// generous than OpenSky (which now hard-throttles anonymous access). They share
+// the tar1090/readsb "aircraft.json" schema, so one mapper covers both. The data
+// is richer too: ICAO type, registration and a military flag come for free.
+const ADSB_SOURCES = [
+  (lat, lon, nm) => `https://api.adsb.lol/v2/lat/${lat}/lon/${lon}/dist/${nm}`,
+  (lat, lon, nm) => `https://opendata.adsb.fi/api/v2/lat/${lat}/lon/${lon}/dist/${nm}`,
+];
+const ADSB_UA = { 'User-Agent': 'LivelySky/1.0 (live planetarium dome; github.com/ReconGrunt/LivelySky)' };
+
+// One readsb aircraft record -> our named, unit-normalised object (metres, m/s).
+function mapAdsbRecord(a) {
+  const onGround = a.alt_baro === 'ground';
+  const altFt = onGround ? 0 : (a.alt_geom ?? (typeof a.alt_baro === 'number' ? a.alt_baro : null));
+  const vrFpm = a.geom_rate ?? a.baro_rate; // ft/min
+  return {
+    id: a.hex,
+    callsign: (a.flight || '').trim(),
+    country: null,                                            // not in ADS-B feed
+    lon: a.lon, lat: a.lat,
+    altitude: altFt == null ? null : altFt * 0.3048,         // ft -> m
+    onGround,
+    velocity: a.gs != null ? a.gs * 0.514444 : null,         // kt -> m/s
+    heading: a.track ?? a.true_heading ?? null,              // true track, deg
+    verticalRate: vrFpm != null ? vrFpm * 0.00508 : null,    // ft/min -> m/s
+    squawk: a.squawk || null,
+    type: a.t || null,                                       // ICAO type (bonus)
+    registration: a.r || null,                               // tail (bonus)
+    category: a.category || null,                            // ADS-B emitter cat (A1..A7, B..)
+    military: !!(a.dbFlags & 1),                             // tar1090 mil flag (bonus)
+    // How many seconds old the position already is at the source — the client
+    // dead-reckons this far forward so the plane sits where it really is NOW.
+    seenPos: typeof a.seen_pos === 'number' ? a.seen_pos : (typeof a.seen === 'number' ? a.seen : 0),
+  };
+}
+
+// Airborne only: reject on-ground, no-altitude, and slow-AND-low (taxiing/parked).
+// High, fast, or hovering-up-high traffic is kept.
+function airborne(a) {
+  if (a.lat == null || a.lon == null) return false;
+  if (a.onGround === true) return false;
+  if (a.altitude == null || a.altitude <= 0) return false;
+  const slow = a.velocity != null && a.velocity < 15; // < ~54 km/h
+  if (slow && a.altitude < 150) return false;
+  return true;
+}
+
 app.get('/api/aircraft', async (req, res) => {
   const lat = parseFloat(req.query.lat);
   const lon = parseFloat(req.query.lon);
@@ -54,68 +104,32 @@ app.get('/api/aircraft', async (req, res) => {
   if (!isFinite(lat) || !isFinite(lon)) {
     return res.status(400).json({ error: 'lat and lon required' });
   }
+  const nm = Math.min(Math.round(radiusKm / 1.852), 250); // these APIs cap at 250 nm
 
-  // Convert radius to a rough bounding box (deg). 1 deg lat ~= 111 km.
-  const dLat = radiusKm / 111;
-  const dLon = radiusKm / (111 * Math.max(Math.cos(lat * Math.PI / 180), 0.01));
-  const bbox = {
-    lamin: (lat - dLat).toFixed(4), lamax: (lat + dLat).toFixed(4),
-    lomin: (lon - dLon).toFixed(4), lomax: (lon + dLon).toFixed(4),
-  };
-
-  const cacheKey = `ac:${bbox.lamin},${bbox.lomin},${bbox.lamax},${bbox.lomax}`;
+  const cacheKey = `ac:${lat.toFixed(2)},${lon.toFixed(2)},${nm}`;
   const cached = getCached(cacheKey);
   if (cached) return res.json({ ...cached, cached: true });
 
-  try {
-    const url = `https://opensky-network.org/api/states/all?lamin=${bbox.lamin}&lomin=${bbox.lomin}&lamax=${bbox.lamax}&lomax=${bbox.lomax}`;
-    const headers = {};
-    if (process.env.OPENSKY_USER && process.env.OPENSKY_PASS) {
-      const token = Buffer.from(`${process.env.OPENSKY_USER}:${process.env.OPENSKY_PASS}`).toString('base64');
-      headers.Authorization = `Basic ${token}`;
+  let lastErr = null;
+  for (const make of ADSB_SOURCES) {
+    const url = make(lat, lon, nm);
+    try {
+      const raw = await fetchJson(url, { headers: ADSB_UA, signal: AbortSignal.timeout(8000) });
+      const list = raw.ac || raw.aircraft || [];
+      const aircraft = list.map(mapAdsbRecord).filter(airborne);
+      const host = new URL(url).host;
+      const payload = { time: Math.floor(Date.now() / 1000), count: aircraft.length, aircraft, source: host };
+      setCached(cacheKey, payload, 2_000); // near real-time; these feeds refresh every few seconds
+      return res.json(payload);
+    } catch (err) {
+      lastErr = err; // try the next source
     }
-    const raw = await fetchJson(url, { headers });
-
-    // OpenSky state vector indices:
-    // 0 icao24, 1 callsign, 2 origin_country, 5 lon, 6 lat, 7 baro_alt,
-    // 8 on_ground, 9 velocity (m/s), 10 true_track (deg), 11 vert_rate,
-    // 13 geo_alt, 14 squawk, 16 category
-    const aircraft = (raw.states || [])
-      .map((s) => ({
-        id: s[0],
-        callsign: (s[1] || '').trim(),
-        country: s[2],
-        lon: s[5], lat: s[6],
-        altitude: s[13] ?? s[7], // geometric altitude (m), fall back to baro
-        onGround: s[8],
-        velocity: s[9],          // m/s
-        heading: s[10],          // true track, deg
-        verticalRate: s[11],     // m/s
-        squawk: s[14] || null,   // transponder code
-      }))
-      // Airborne only. OpenSky's on_ground flag is primary, but it's sometimes
-      // missing/stale for taxiing or parked aircraft, so we also reject anything
-      // with no usable altitude, and anything that is both slow AND low (i.e.
-      // taxiing/parked). Genuinely flying aircraft move fast or are well above
-      // the field, so they're kept; hovering helicopters up high stay too.
-      .filter((a) => {
-        if (a.lat == null || a.lon == null) return false;
-        if (a.onGround === true) return false;
-        if (a.altitude == null || a.altitude <= 0) return false;
-        const slow = a.velocity != null && a.velocity < 15;   // < ~54 km/h
-        if (slow && a.altitude < 150) return false;           // taxiing / parked
-        return true;
-      });
-
-    const payload = { time: raw.time, count: aircraft.length, aircraft };
-    setCached(cacheKey, payload, 12_000); // OpenSky updates ~every 5-10s
-    res.json(payload);
-  } catch (err) {
-    // Serve last-known data if we have any, even if stale, so the dome doesn't blink out.
-    const stale = cache.get(cacheKey);
-    if (stale) return res.json({ ...stale.data, stale: true, error: String(err) });
-    res.status(502).json({ error: String(err), aircraft: [] });
   }
+
+  // Both sources failed — serve last-known data if we have any so the dome holds.
+  const stale = cache.get(cacheKey);
+  if (stale) return res.json({ ...stale.data, stale: true, error: String(lastErr) });
+  res.status(502).json({ error: String(lastErr), aircraft: [] });
 });
 
 // --- Satellites (CelesTrak TLE) ---------------------------------------------
@@ -217,8 +231,86 @@ function pickAirport(a) {
     name: a.name || null,
     municipality: a.municipality || null,
     country: a.country_name || null,
+    lat: a.latitude != null ? Number(a.latitude) : null,
+    lon: a.longitude != null ? Number(a.longitude) : null,
   };
 }
+
+// --- Live ATC audio (LiveATC.net) -------------------------------------------
+// There is no public per-aircraft *cockpit* audio anywhere — but the facility an
+// aircraft is working (tower/approach) is streamed live & free by LiveATC. We
+// proxy it (their CDN edge is Cloudflare-challenged for the generic host, but the
+// regional Icecast servers stream fine with a browser UA + referer). Off by
+// default in the UI; the client tunes the nearest verified facility on hover.
+//
+// Each feed is host-verified (see scripts/atc-probe.mjs). lat/lon let the client
+// pick the closest one to the hovered aircraft.
+const ATC_FEEDS = {
+  klax_twr: { label: 'KLAX Tower', lat: 33.9425, lon: -118.4081 },
+  ksfo_twr: { label: 'KSFO Tower', lat: 37.6189, lon: -122.3750 },
+  kdal_twr: { label: 'KDAL Tower', lat: 32.8470, lon: -96.8518 },
+  kdtw_twr: { label: 'KDTW Tower', lat: 42.2124, lon: -83.3534 },
+  kjfk_twr: { label: 'KJFK Tower', lat: 40.6398, lon: -73.7789 },
+  klga_twr: { label: 'LaGuardia Tower', lat: 40.7769, lon: -73.8740 },
+  kewr_twr: { label: 'KEWR Tower', lat: 40.6925, lon: -74.1687 },
+  katl_twr: { label: 'KATL Tower', lat: 33.6367, lon: -84.4281 },
+};
+const ATC_HOSTS = ['s1-bos', 's1-fmt2', 's1-sjc'];
+const ATC_UA = { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.liveatc.net/' };
+
+// List feeds (with coords) so the client can choose the nearest to an aircraft.
+app.get('/api/atc', (_req, res) => {
+  res.json({ feeds: Object.entries(ATC_FEEDS).map(([id, f]) => ({ id, ...f })) });
+});
+
+// Find which regional Icecast host currently serves a feed; cache the winner.
+async function resolveAtcUrl(feed) {
+  const ck = `atcurl:${feed}`;
+  const hit = getCached(ck);
+  if (hit) return hit;
+  for (const h of ATC_HOSTS) {
+    const url = `https://${h}.liveatc.net/${feed}`;
+    try {
+      const r = await fetch(url, { headers: ATC_UA, signal: AbortSignal.timeout(3000) });
+      const ct = r.headers.get('content-type') || '';
+      try { await r.body?.cancel(); } catch { /* ignore */ }
+      if (r.ok && ct.includes('audio')) { setCached(ck, url, 30 * 60 * 1000); return url; }
+    } catch { /* try next host */ }
+  }
+  return null;
+}
+
+// Stream-proxy one feed: GET /api/atc/klax_twr
+app.get('/api/atc/:feed', async (req, res) => {
+  const feed = String(req.params.feed).toLowerCase().replace(/[^a-z0-9_]/g, '');
+  if (!ATC_FEEDS[feed]) return res.status(404).json({ error: 'unknown feed' });
+  const url = await resolveAtcUrl(feed);
+  if (!url) return res.status(502).json({ error: 'feed offline' });
+  try {
+    // bound the connect; once headers arrive, let the body stream indefinitely
+    const ctrl = new AbortController();
+    const connectTimer = setTimeout(() => ctrl.abort(), 8000);
+    const upstream = await fetch(url, { headers: ATC_UA, signal: ctrl.signal });
+    clearTimeout(connectTimer);
+    if (!upstream.ok || !upstream.body) return res.status(502).json({ error: 'stream unavailable' });
+    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'audio/mpeg');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Atc-Name', upstream.headers.get('icy-name') || ATC_FEEDS[feed].label);
+    const reader = upstream.body.getReader();
+    let closed = false;
+    const stop = () => { closed = true; reader.cancel().catch(() => {}); };
+    req.on('close', stop);
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done || closed) break;
+      if (!res.write(Buffer.from(value))) await new Promise((r) => res.once('drain', r));
+    }
+    res.end();
+  } catch (err) {
+    if (!res.headersSent) res.status(502).json({ error: String(err) });
+    else res.end();
+  }
+});
 
 // --- Weather (Open-Meteo) ---------------------------------------------------
 // GET /api/weather?lat=..&lon=..  -> current conditions. Free, no key.
@@ -263,8 +355,6 @@ app.use(express.static(path.join(__dirname, '..', 'public'), {
 }));
 
 app.listen(PORT, () => {
-  console.log(`\n  Plane Projector running:  http://localhost:${PORT}\n`);
-  if (!process.env.OPENSKY_USER) {
-    console.log('  (anonymous OpenSky — set OPENSKY_USER/OPENSKY_PASS for higher aircraft rate limits)\n');
-  }
+  console.log(`\n  LivelySky running:  http://localhost:${PORT}`);
+  console.log('  Aircraft: adsb.lol (adsb.fi fallback) — free, no key.\n');
 });

@@ -30,14 +30,23 @@ export function classify(state, info) {
   // then law, then military.
   if (RE_EMS.test(text)) return 'ems';
   if (RE_LAW.test(text)) return 'law';
-  if (isUSMilHex(state?.id || '') || RE_MIL.test(text)) return 'mil';
+  if (state?.military || isUSMilHex(state?.id || '') || RE_MIL.test(text)) return 'mil';
   return 'civ';
 }
 
 const RE_HELI_MFR = /helicopter|sikorsky|robinson|eurocopter|airbus helicopters|agusta|leonardo|md helicopters|enstrom|kaman|schweizer|\bbell\b/i;
-const RE_HELI_TYPE = /^(EC1?\d|AS3|AS5|R22|R44|R66|B06|B407|B412|B212|B206|B505|B429|S76|S92|S70|UH|AH|MH|CH4|H12|H125|H130|H135|H145|H155|H160|H175|H225|A109|A119|A139|A159|A169|A189|MD5|MD6|MD9|H500|H269|EXEC|GAZL|LYNX|PUMA|R44|R66)/i;
+// ICAO type designators (and common prefixes) for rotorcraft. Matches against the
+// instant state.type from ADS-B, so helis are recognised on the first frame.
+const RE_HELI_TYPE = /^(EC\d|AS3|AS5|AS6|AS35|AS50|AS55|AS65|AW\d|R22|R44|R66|B06|B407|B412|B212|B206|B505|B427|B429|B430|S76|S92|S70|S64|S61|UH\d|UH60|AH\d|MH\d|CH4|CH53|H47|H60|H64|H65|H53|H125|H130|H135|H145|H155|H160|H175|H225|H269|H500|A109|A119|A139|A159|A169|A189|MD5|MD52|MD60|MD52N|GAZL|LYNX|PUMA|EXEC|EXPL|HUCO|NH90|TIGR|B47)/i;
 
-export function isHelicopter(info) {
+// Decide rotorcraft from the instant ADS-B state (preferred) then enrichment.
+// state.category 'A7' is the ADS-B emitter category for rotorcraft.
+export function isHelicopter(info, state) {
+  if (state) {
+    if (state.category === 'A7') return true;
+    const st = (state.type || '').toUpperCase();
+    if (st && RE_HELI_TYPE.test(st)) return true;
+  }
   const mfr = info?.aircraft?.manufacturer || '';
   const type = (info?.aircraft?.type || '').toUpperCase();
   if (RE_HELI_MFR.test(mfr)) return true;

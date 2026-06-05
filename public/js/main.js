@@ -22,6 +22,8 @@ import { FisheyeDome } from './fisheye.js';
 import { loadModels } from './assets.js';
 import { DEG } from './coords.js';
 import { initUI } from './ui.js';
+import { AtcAudio } from './atc.js';
+import { TowerLayer } from './towers.js';
 
 const state = {
   observer: loadObserver(),
@@ -32,6 +34,7 @@ const state = {
   labels: { aircraft: false, stars: false },
   labelFields: { route: true, type: true, altitude: true, speed: true, heading: false, squawk: false, registration: false, vrate: false },
   bloom: false,        // off by default — the post-process pass flickers on some GPUs
+  atc: false,          // live ATC audio on hover (LiveATC.net), off by default
   navlights: true,     // realistic aircraft lighting
   ground: false,       // hard ground disc off — backdrop fades dark below horizon
   weather: true,       // real cloud cover
@@ -123,6 +126,32 @@ const layers = {
 const clouds = new CloudLayer(scene);
 const navLights = new NavLights(scene, layers.aircraft.geo);
 const flightBoard = new FlightBoard();
+const atc = new AtcAudio();
+const towers = new TowerLayer(scene);
+
+// Build the in-range tower markers + the options-panel checkboxes. Called when
+// the feed list loads and whenever the observer location changes.
+function rebuildTowers() {
+  const markers = towers.setObserver(state.observer);
+  const list = document.getElementById('tower-list');
+  if (!list) return;
+  if (!markers.length) { list.innerHTML = '<span class="hint">— none in range —</span>'; return; }
+  list.innerHTML = '';
+  for (const m of markers) {
+    const row = document.createElement('label');
+    row.className = 'tower-row';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = atc.isListening(m.id);
+    cb.addEventListener('change', () => {
+      if (cb.checked) atc.listen({ id: m.id, label: m.label });
+      else atc.unlisten(m.id);
+    });
+    row.appendChild(cb);
+    row.appendChild(document.createTextNode(` ${m.label} · ${Math.round(m.distKm)} km`));
+    list.appendChild(row);
+  }
+}
+atc.onFeeds((feeds) => { towers.setFeeds(feeds); rebuildTowers(); });
 
 // Load the real glTF models once, then hand them to the layers that use them.
 loadModels().then((m) => {
@@ -147,15 +176,24 @@ const raycaster = new THREE.Raycaster();
 raycaster.params.Points.threshold = 10; // satellites are small Points
 const pointer = new THREE.Vector2();
 const _viewDir = new THREE.Vector3();
-let pinned = null; // selected object's userData
+// The "focused" object stays locked once you hover it, so its details and flight
+// path persist without having to keep the cursor on the moving plane. Hovering a
+// different object switches focus; clicking empty sky clears it.
+let focused = null;
 
 renderer.domElement.addEventListener('pointermove', (e) => {
   pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
   pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
 });
 renderer.domElement.addEventListener('click', () => {
-  pinned = hoveredData;
-  if (pinned?.entry) layers.aircraft.requestEnrich(pinned.entry);
+  if (hoveredData?.kind === 'tower') return; // tower already tuned on hover
+  if (hoveredData) {
+    focused = hoveredData;
+    if (focused.entry) layers.aircraft.requestEnrich(focused.entry);
+  } else {
+    focused = null; // clicked empty sky — release the lock
+    ui.showInfo(null); layers.aircraft.hidePath();
+  }
 });
 
 let hovered = null;
@@ -166,6 +204,7 @@ function pick() {
   if (state.layers.planets) targets.push(...layers.planets.pickables.filter((o) => o.visible));
   if (state.layers.aircraft) targets.push(...layers.aircraft.pickables());
   if (state.layers.satellites && layers.satellites.points) targets.push(layers.satellites.points);
+  targets.push(...towers.pickables());
   const hits = raycaster.intersectObjects(targets, true); // recursive: models are groups
   const hit = hits.length ? hits[0] : null;
   hovered = hit ? hit.object : null;
@@ -182,13 +221,43 @@ function pick() {
     }
   }
   hoveredData = data;
-  ui.showInfo(data || pinned);
+  // Towers: hovering one tunes its ATC feed but does NOT become the sticky focus,
+  // so the plane you were looking at keeps its card and path.
+  if (data?.kind === 'tower') {
+    atc.tuneFeed({ id: data.id, label: data.label });
+  } else if (data) {
+    focused = data;                                // hovering locks focus onto it
+  }
+
+  // drop the lock if the focused aircraft has left range
+  if (focused?.kind === 'aircraft' && focused.entry
+      && !layers.aircraft.planes.has(focused.entry.id)) {
+    focused = null;
+  }
+
+  // for a locked aircraft, keep showing its LIVE details as it moves (the layer
+  // refreshes entry.mesh.userData every frame) so numbers stay real-time
+  let shown = focused;
+  if (focused?.kind === 'aircraft' && focused.entry?.mesh?.visible && focused.entry.mesh.userData) {
+    shown = focused.entry.mesh.userData;
+    focused = shown;
+  }
+  ui.showInfo(shown);
+
+  // flight path + ATC follow the locked aircraft (not just the hovered one).
+  // While hovering a tower, that tower owns the audio channel — don't fight it.
+  if (shown?.kind === 'aircraft' && shown.entry) {
+    layers.aircraft.showPath(shown.entry, state.observer);
+    if (data?.kind !== 'tower') atc.tune(shown.entry);
+  } else {
+    layers.aircraft.hidePath();
+  }
 }
 
 // --- UI ---
 const ui = initUI({
   state,
-  onObserverChange: (obs) => { state.observer = obs; saveObserver(obs); refreshAircraft(); refreshWeather(); },
+  onObserverChange: (obs) => { state.observer = obs; saveObserver(obs); refreshAircraft(); refreshWeather(); rebuildTowers(); },
   onLayerToggle: (name, on) => { state.layers[name] = on; layers[name].setVisible(on); },
   onLabelToggle: (name, on) => {
     state.labels[name] = on;
@@ -196,6 +265,7 @@ const ui = initUI({
     if (name === 'stars') layers.stars.setLabels(on);
   },
   onBloomToggle: (on) => { state.bloom = on; },
+  onAtcToggle: (on) => { state.atc = on; atc.setEnabled(on); },
   onNavToggle: (on) => { state.navlights = on; navLights.setVisible(on); },
   onWeatherToggle: (on) => { state.weather = on; clouds.setVisible(on); },
   onGroundToggle: (on) => setGround(on),
@@ -305,7 +375,7 @@ async function initData() {
   ui.status('Live');
 }
 initData();
-setInterval(refreshAircraft, 12_000);
+setInterval(refreshAircraft, 4_000); // near real-time; dead-reckoned between polls
 setInterval(refreshWeather, 10 * 60_000);
 
 // --- ISS pass alerts ---
@@ -336,7 +406,12 @@ function renderIss() {
 }
 refreshIss();
 setInterval(refreshIss, 12_000);
-setInterval(() => { flightBoard.tick(); renderIss(); }, 1000);
+setInterval(() => {
+  flightBoard.tick();
+  renderIss();
+  // satellite badge = how many are actually above the horizon right now
+  if (state.layers.satellites) ui.setCount('satellites', layers.satellites.visibleSats.length);
+}, 1000);
 
 // --- render loop ---
 let lastPick = 0, lastPump = 0, lastBoard = 0, lastTick = 0;
