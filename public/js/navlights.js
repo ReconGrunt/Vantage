@@ -116,17 +116,36 @@ export class NavLights {
     // band) the light scatters into a big soft halo — so you can see it lighting
     // up the cloud overhead even when the airframe itself is hidden.
     const night = this.night || 0, cloud = this.cloud || 0;
+
+    // Forward landing/taxi-light glint at night.
     if (night > 0.04) {
-      const band = alt < 8000 ? 1 : 0.3;              // typical cloud layer
-      const scatter = cloud * band;
       const nb = night;
       out.push([0, yMid * 0.5, zNose * 0.8, 1.1 * nb, 1.0 * nb, 0.85 * nb, 7 + nb * 3]);
-      if (scatter > 0.05) {
-        const gb = 0.18 * nb + scatter * 0.85;        // glow brightness
-        const gs = Math.min(20 + scatter * 46, 60);   // glow size (px), capped for GPU
-        out.push([0, yMid, 0, gb, gb, gb * 1.05, gs]);
-        out.push([bb.max.x * 0.35, yMid, 0, gb * 0.55, gb * 0.55, gb * 0.6, gs * 0.55]);
-        out.push([bb.min.x * 0.35, yMid, 0, gb * 0.55, gb * 0.55, gb * 0.6, gs * 0.55]);
+    }
+
+    // Cloud illumination: when the aircraft is INSIDE the cloud layer, its strobes
+    // and beacon light up the surrounding cloud — a soft halo that FLASHES in time
+    // with the lights, exactly like watching a jet pass through cloud. Brightest at
+    // night/dusk, a faint hint by day. The halo is large and soft so it reads as
+    // the cloud glowing, not a point light.
+    const band = (alt > 500 && alt < 8500)
+      ? smoothstep01(Math.min(alt - 500, 8500 - alt) / 1500) : 0;
+    const inCloud = cloud * band;
+    if (inCloud > 0.06) {
+      const vis = clamp01(night * 1.6 + 0.12);           // day-faint .. night-strong
+      const gs = Math.min(28 + inCloud * 64, 90);        // halo size (px)
+      if (strobe > 0) {                                  // white double-flash lights the cloud
+        const w = inCloud * vis;
+        out.push([0, yMid, 0, w, w, w * 1.05, gs]);
+        out.push([bb.max.x * 0.4, yMid, 0, w * 0.6, w * 0.6, w * 0.65, gs * 0.6]);
+        out.push([bb.min.x * 0.4, yMid, 0, w * 0.6, w * 0.6, w * 0.65, gs * 0.6]);
+      } else {                                           // soft presence between flashes
+        const a = 0.12 * inCloud * vis;
+        out.push([0, yMid, 0, a, a, a * 1.05, gs * 0.8]);
+      }
+      if (beacon > 0) {                                  // red beacon pulse tints the cloud
+        const r = 0.85 * inCloud * vis;
+        out.push([0, yMid, 0, r, r * 0.12, r * 0.12, gs * 0.85]);
       }
     }
     return out;
@@ -141,6 +160,8 @@ function bboxOf(geo) {
 }
 
 function frac(x) { return x - Math.floor(x); }
+function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
+function smoothstep01(x) { x = clamp01(x); return x * x * (3 - 2 * x); }
 function strobeFn(x) { return (x < 0.045 || (x > 0.10 && x < 0.145)) ? 1 : 0; }
 function hash(s) {
   let h = 2166136261;

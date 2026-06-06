@@ -65,10 +65,6 @@ const TRAIL_MAX = 48;          // trail nodes
 const TRAIL_DT = 180;          // ms between trail samples
 const CONTRAIL_MIN_ALT = 7600; // m (~25,000 ft) — contrails only form up high
 const SNAP_MS = 500;           // snap-free convergence window after a poll
-const BANK_MAX = 16 * DEG;     // max roll into a turn (conservative — avoids fake tilt)
-const BANK_TAU = 1.1;          // roll in/out time constant (s) — slow, smooth
-const TURN_DEADZONE = 0.35;    // deg/s of heading change to ignore as ADS-B jitter
-const TURN_GAIN = 5;           // bank degrees per deg/s of (real) turn rate
 const MIN_ELEV_DEG = 5;        // hide horizon-skimming traffic (not naked-eye visible)
 const MIN_AGL_M = 450;         // hide pattern/approach traffic (~1500 ft AGL and below)
 
@@ -377,19 +373,9 @@ export class AircraftLayer {
       const aheadPos = domePosition(aheadLook.azimuth, aheadLook.altitude, SHELLS.aircraft);
       entry.mesh.up.copy(pos).normalize();             // radial up = belly toward observer
       if (aheadPos.distanceToSquared(pos) > 1e-4) entry.mesh.lookAt(aheadPos);
-
-      // BANK: a GENTLE roll into sustained turns about the nose (+Z) axis. ADS-B
-      // heading is coarse/jittery, so we ignore small per-poll changes (deadzone)
-      // and ease slowly — otherwise level flight looks wrongly tilted.
-      const oms = entry.lastOrientMs || now;
-      const odt = Math.max((now - oms) / 1000, 1e-3);
-      const tr = entry.turnRate || 0;
-      const trEff = Math.abs(tr) < TURN_DEADZONE ? 0 : tr;
-      let targetBank = THREE.MathUtils.clamp(trEff * TURN_GAIN * DEG, -BANK_MAX, BANK_MAX);
-      if (entry.isHeli) targetBank = 0;                // helis don't bank like jets
-      entry.bank += (targetBank - entry.bank) * Math.min(odt / BANK_TAU, 1);
-      entry.lastOrientMs = now;
-      if (Math.abs(entry.bank) > 1e-4) entry.mesh.rotateZ(entry.bank);
+      // DEAD LEVEL: this is projected onto a flat ceiling and optimised for a 2D
+      // top-down view, so no banking/roll — just nose-along-track with the belly
+      // facing the viewer. (Apparent climb/descent still tilts the nose slightly.)
 
       // EMERGENCY: a serious transponder squawk gives the aircraft a pulsing
       // aura — yellow for lost-comms, red for general emergency / hijack, pulsing
