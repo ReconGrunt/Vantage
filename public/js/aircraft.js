@@ -65,8 +65,10 @@ const TRAIL_MAX = 48;          // trail nodes
 const TRAIL_DT = 180;          // ms between trail samples
 const CONTRAIL_MIN_ALT = 7600; // m (~25,000 ft) — contrails only form up high
 const SNAP_MS = 500;           // snap-free convergence window after a poll
-const BANK_MAX = 28 * DEG;     // max realistic roll into a turn (rad)
-const BANK_TAU = 0.6;          // roll in/out time constant (s)
+const BANK_MAX = 16 * DEG;     // max roll into a turn (conservative — avoids fake tilt)
+const BANK_TAU = 1.1;          // roll in/out time constant (s) — slow, smooth
+const TURN_DEADZONE = 0.35;    // deg/s of heading change to ignore as ADS-B jitter
+const TURN_GAIN = 5;           // bank degrees per deg/s of (real) turn rate
 const MIN_ELEV_DEG = 5;        // hide horizon-skimming traffic (not naked-eye visible)
 const MIN_AGL_M = 450;         // hide pattern/approach traffic (~1500 ft AGL and below)
 
@@ -365,20 +367,26 @@ export class AircraftLayer {
       // ORIENT-calibrated to that — so we MUST keep using lookAt or the planes
       // fly backwards. aheadGeo includes vertical rate, so the nose also pitches
       // up/down with climb and descent. Then we roll about the nose axis to bank.
-      const aheadGeo = deadReckon(displayed, s.velocity || 0, s.heading || 0, 4);
-      aheadGeo.alt += (s.verticalRate || 0) * 4;
+      // Forward direction: look a short way ahead along the track. Use a velocity
+      // floor so slow GA traffic still gets a stable heading vector, and keep the
+      // lookahead short (~2.5 s) so it follows the real path without over-curving.
+      const fwdSpeed = Math.max(s.velocity || 0, 55);
+      const aheadGeo = deadReckon(displayed, fwdSpeed, s.heading || 0, 2.5);
+      aheadGeo.alt += (s.verticalRate || 0) * 2.5;
       const aheadLook = lookAngles(eye, aheadGeo);
       const aheadPos = domePosition(aheadLook.azimuth, aheadLook.altitude, SHELLS.aircraft);
       entry.mesh.up.copy(pos).normalize();             // radial up = belly toward observer
       if (aheadPos.distanceToSquared(pos) > 1e-4) entry.mesh.lookAt(aheadPos);
 
-      // BANK: roll into turns about the nose (local +Z) axis. turnRate (deg/s) is
-      // measured per-poll; ease toward a clamped target so the roll in/out reads
-      // smoothly rather than snapping.
+      // BANK: a GENTLE roll into sustained turns about the nose (+Z) axis. ADS-B
+      // heading is coarse/jittery, so we ignore small per-poll changes (deadzone)
+      // and ease slowly — otherwise level flight looks wrongly tilted.
       const oms = entry.lastOrientMs || now;
       const odt = Math.max((now - oms) / 1000, 1e-3);
-      let targetBank = THREE.MathUtils.clamp((entry.turnRate || 0) * 8.5 * DEG, -BANK_MAX, BANK_MAX);
-      if (entry.isHeli) targetBank *= 0.4;             // helis bank far less
+      const tr = entry.turnRate || 0;
+      const trEff = Math.abs(tr) < TURN_DEADZONE ? 0 : tr;
+      let targetBank = THREE.MathUtils.clamp(trEff * TURN_GAIN * DEG, -BANK_MAX, BANK_MAX);
+      if (entry.isHeli) targetBank = 0;                // helis don't bank like jets
       entry.bank += (targetBank - entry.bank) * Math.min(odt / BANK_TAU, 1);
       entry.lastOrientMs = now;
       if (Math.abs(entry.bank) > 1e-4) entry.mesh.rotateZ(entry.bank);
