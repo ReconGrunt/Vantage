@@ -360,21 +360,19 @@ export class AircraftLayer {
       if (this.ceilingMode) { sc *= CEIL_BOOST; cap = VIS_MAX_CEIL; }
       entry.mesh.scale.setScalar(THREE.MathUtils.clamp(sc, VIS_MIN, cap));
 
-      // ---- Orientation: DEAD-LEVEL, belly toward the viewer, nose along track ----
+      // ---- Orientation: nose along the APPARENT TRACK (matches the path line) ----
       // IMPORTANT: for a Mesh, Object3D.lookAt points local +Z at the target (the
       // opposite of the camera convention), and the glTF models are ORIENT-calibrated
       // to that — so we MUST keep using lookAt or the planes fly backwards.
-      // This is a flat-ceiling 2D projection: with up = radial the belly faces the
-      // viewer flat-on. We aim the nose along the apparent track but KEEP THE AHEAD
-      // POINT AT THE PLANE'S CURRENT ELEVATION (look.altitude) — i.e. it only moves
-      // in azimuth, never radially in/out. That removes the foreshortening tilt a
-      // plane gets when it's climbing toward/away from the zenith, so every aircraft
-      // reads as a clean flat top-down icon pointing the way it's going. No pitch,
-      // no bank.
+      // We aim the nose at the plane's TRUE next on-dome position (same azimuth AND
+      // elevation it's actually heading to). This is exactly the direction the
+      // flight-path line is drawn, so the model points straight down its own track
+      // instead of at a "weird angle" to it. No climb-pitch (aheadGeo holds the
+      // current altitude) and no bank; belly faces the viewer via up = radial.
       const fwdSpeed = Math.max(s.velocity || 0, 55);
       const aheadGeo = deadReckon(displayed, fwdSpeed, s.heading || 0, 2.5);
       const aheadLook = lookAngles(eye, aheadGeo);
-      const aheadPos = domePosition(aheadLook.azimuth, look.altitude, SHELLS.aircraft);
+      const aheadPos = domePosition(aheadLook.azimuth, aheadLook.altitude, SHELLS.aircraft);
       entry.mesh.up.copy(pos).normalize();             // radial up = belly toward observer
       if (aheadPos.distanceToSquared(pos) > 1e-4) {
         _qPrev.copy(entry.mesh.quaternion);
