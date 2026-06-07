@@ -37,6 +37,7 @@ const state = {
   atc: true,           // live ATC audio on hover — always on (no toggle)
   navlights: true,     // realistic aircraft lighting — always on (no toggle)
   ground: false,       // hard ground disc off — backdrop fades dark below horizon
+  showPath: true,      // draw the came-from / going-to path for the selected plane
   weather: true,       // real cloud cover
   autoNorth: false,    // align North from device compass
   display: 'ceiling',  // 'free' | 'ceiling' | 'fisheye' — ceiling is the primary use
@@ -279,7 +280,8 @@ function pick() {
   // flight path + ATC follow the locked aircraft (not just the hovered one).
   // While hovering a tower, that tower owns the audio channel — don't fight it.
   if (shown?.kind === 'aircraft' && shown.entry) {
-    layers.aircraft.showPath(shown.entry, state.observer);
+    if (state.showPath) layers.aircraft.showPath(shown.entry, state.observer);
+    else layers.aircraft.hidePath();
     if (data?.kind !== 'tower') atc.tune(shown.entry);
   } else {
     layers.aircraft.hidePath();
@@ -304,6 +306,7 @@ const ui = initUI({
   onAtcToggle: (on) => { state.atc = on; atc.setEnabled(on); },
   onNavToggle: (on) => { state.navlights = on; navLights.setVisible(on); },
   onWeatherToggle: (on) => { state.weather = on; clouds.setVisible(on && !state.skyOnly); },
+  onPathToggle: (on) => { state.showPath = on; if (!on) layers.aircraft.hidePath(); },
   onGroundToggle: (on) => setGround(on),
   onLabelFields: (fields) => { state.labelFields = fields; layers.aircraft.setLabelFields(fields); },
   onDisplayChange: (mode) => setDisplay(mode),

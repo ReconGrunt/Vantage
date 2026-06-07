@@ -1,6 +1,6 @@
 // ui.js — overlay panel: layer toggles, observer location, clock, object info.
 
-export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, onBloomToggle, onAtcToggle, onNavToggle, onWeatherToggle, onGroundToggle, onLabelFields, onDisplayChange, onNorthChange, onZoom, onSkySpan, onSkyOnly, onAutoNorth, onCalibration, onRange, onSatGroupChange }) {
+export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, onBloomToggle, onAtcToggle, onNavToggle, onWeatherToggle, onGroundToggle, onPathToggle, onLabelFields, onDisplayChange, onNorthChange, onZoom, onSkySpan, onSkyOnly, onAutoNorth, onCalibration, onRange, onSatGroupChange }) {
   const $ = (id) => document.getElementById(id);
 
   // layer toggles
@@ -18,6 +18,10 @@ export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, 
   }
 
   // graphics toggles (nav lights + ATC audio are always on, so no UI control)
+  const pathEl = $('toggle-path');
+  pathEl.checked = state.showPath;
+  pathEl.addEventListener('change', () => onPathToggle(pathEl.checked));
+
   const weatherEl = $('toggle-weather');
   weatherEl.checked = state.weather;
   weatherEl.addEventListener('change', () => onWeatherToggle(weatherEl.checked));

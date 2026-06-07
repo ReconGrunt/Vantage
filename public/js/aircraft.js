@@ -360,45 +360,40 @@ export class AircraftLayer {
       if (this.ceilingMode) { sc *= CEIL_BOOST; cap = VIS_MAX_CEIL; }
       entry.mesh.scale.setScalar(THREE.MathUtils.clamp(sc, VIS_MIN, cap));
 
-      // ---- Orientation: nose along the APPARENT TRACK (matches the path line) ----
-      // IMPORTANT: for a Mesh, Object3D.lookAt points local +Z at the target (the
-      // opposite of the camera convention), and the glTF models are ORIENT-calibrated
-      // to that — so we MUST keep using lookAt or the planes fly backwards.
-      // We aim the nose at the plane's TRUE next on-dome position (same azimuth AND
-      // elevation it's actually heading to). This is exactly the direction the
-      // flight-path line is drawn, so the model points straight down its own track
-      // instead of at a "weird angle" to it. No climb-pitch (aheadGeo holds the
-      // current altitude) and no bank; belly faces the viewer via up = radial.
+      // ---- Orientation: FLAT TOP-DOWN ICON that always faces the viewer ----
+      // For a ceiling projector we want every aircraft to read as the same clean
+      // top-down shape whether it's at the zenith or down by the rim — never an
+      // obliquely-foreshortened, "bent"-looking model. So we DON'T use lookAt (which
+      // pitches the nose toward/away from the camera). Instead we build the basis by
+      // hand: up = radial (belly squarely toward the viewer) and the nose = the
+      // heading direction with its radial component removed, i.e. projected into the
+      // view plane. The model stays flat-on at any elevation and just yaws to point
+      // the way it's going. (glTF models are calibrated nose = +Z, top = +Y.)
       const fwdSpeed = Math.max(s.velocity || 0, 55);
       const aheadGeo = deadReckon(displayed, fwdSpeed, s.heading || 0, 2.5);
       const aheadLook = lookAngles(eye, aheadGeo);
       const aheadPos = domePosition(aheadLook.azimuth, aheadLook.altitude, SHELLS.aircraft);
-      entry.mesh.up.copy(pos).normalize();             // radial up = belly toward observer
-      if (aheadPos.distanceToSquared(pos) > 1e-4) {
-        _qPrev.copy(entry.mesh.quaternion);
-        entry.mesh.lookAt(aheadPos);                   // aim nose (+Z) down the track
-        _qTgt.copy(entry.mesh.quaternion);
-        // Directly overhead the apparent azimuth swings through a singularity as the
-        // plane crosses the zenith, which would whip/warp the model around. Slerp
-        // toward the freshly-aimed orientation instead of snapping, and damp HARD
-        // near the zenith so an overhead pass glides smoothly rather than spinning.
+      _up.copy(pos).normalize();                       // belly faces the viewer
+      _fwd.copy(aheadPos).sub(pos);
+      _fwd.addScaledVector(_up, -_fwd.dot(_up));       // drop radial part -> stay flat
+      if (_fwd.lengthSq() > 1e-8) {
+        _fwd.normalize();
+        _right.crossVectors(_up, _fwd).normalize();
+        _m.makeBasis(_right, _up, _fwd);               // +X right, +Y up, +Z = nose
+        _qTgt.setFromRotationMatrix(_m);
+        // Ease toward the new heading and clamp the per-frame turn, so the fast
+        // azimuth swing as a plane crosses the zenith glides instead of snapping.
         if (entry._oriented) {
-          // Ease toward the new aim; clamp the per-frame turn so a fast apparent
-          // swing can't snap. Damp progressively harder approaching the zenith,
-          // where the azimuth singularity would otherwise spin the model.
-          let blend = 0.18;
-          if (look.altitude > 70) blend *= THREE.MathUtils.clamp((90 - look.altitude) / 20, 0.05, 1);
+          _qPrev.copy(entry.mesh.quaternion);
           const ang = _qPrev.angleTo(_qTgt);
-          const maxStep = 0.12;                        // ~7° per frame ceiling on the turn
-          if (ang > 1e-4) blend = Math.min(blend, maxStep / ang);
+          let blend = 0.2;
+          if (ang > 1e-4) blend = Math.min(blend, 0.14 / ang);
           entry.mesh.quaternion.copy(_qPrev).slerp(_qTgt, THREE.MathUtils.clamp(blend, 0, 1));
         } else {
-          entry._oriented = true;                      // first frame: take the aim as-is
+          entry.mesh.quaternion.copy(_qTgt);
+          entry._oriented = true;
         }
       }
-      // DEAD LEVEL: this is projected onto a flat ceiling and optimised for a 2D
-      // top-down view, so no banking/roll — just nose-along-track with the belly
-      // facing the viewer. (Apparent climb/descent still tilts the nose slightly.)
 
       // EMERGENCY: a serious transponder squawk gives the aircraft a pulsing
       // aura — yellow for lost-comms, red for general emergency / hijack, pulsing
