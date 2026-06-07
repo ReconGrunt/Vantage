@@ -84,6 +84,7 @@ const _fwd = new THREE.Vector3(), _rUp = new THREE.Vector3(), _right = new THREE
 const _up = new THREE.Vector3(), _up2 = new THREE.Vector3(), _right2 = new THREE.Vector3();
 const _negFwd = new THREE.Vector3(), _UPY = new THREE.Vector3(0, 1, 0);
 const _m = new THREE.Matrix4();
+const _lblOff = new THREE.Vector3();   // scratch for label radial offset (no per-frame alloc)
 
 export class AircraftLayer {
   constructor(scene) {
@@ -436,7 +437,8 @@ export class AircraftLayer {
 
       if (entry.label) {
         entry.label.visible = this.showLabels;
-        entry.label.position.copy(pos).addScaledVector(pos.clone().normalize(), 16);
+        _lblOff.copy(pos).normalize();
+        entry.label.position.copy(pos).addScaledVector(_lblOff, 16);
         // refresh ~1/s so live height/speed stay current without rebuilding every frame
         if (this.showLabels && now - (entry.lastLabel || 0) > 900) {
           this._refreshLabel(entry); entry.lastLabel = now;

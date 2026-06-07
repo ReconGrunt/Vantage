@@ -5,3 +5,6 @@ npm-debug.log*
 .env
 .vscode/
 stars_raw.csv
+
+# Internal agent-sprint scratchpad — keep local, never publish
+AGENT_COMMS.md

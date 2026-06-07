@@ -39,6 +39,7 @@ export class PlanetLayer {
     this.pickables = [];
     this.sunDir = new THREE.Vector3(0, 1, 0);
     this.sunAltitude = -90;
+    this._lastCompute = 0;   // ms timestamp of the last astronomy-engine solve (throttled)
 
     for (const b of BODIES) {
       const mat = new THREE.SpriteMaterial({
@@ -62,6 +63,19 @@ export class PlanetLayer {
   setVisible(v) { this.group.visible = v; }
 
   update(observer, date) {
+    // The Sun, Moon and planets move only arcseconds per animation frame, so
+    // solving the full astronomy-engine ephemeris every frame is wasted CPU.
+    // Recompute at ~1 Hz (or immediately if the observer moved) and hold the
+    // cached positions/sunDir between solves — the sprites don't move, sunDir /
+    // sunAltitude consumers in main.js read these same fields and stay fresh
+    // (1 Hz is far finer than twilight lighting needs). First call always runs.
+    const ms = date.getTime();
+    const moved = !this._obs || this._obs.lat !== observer.lat
+      || this._obs.lon !== observer.lon || this._obs.alt !== observer.alt;
+    if (!moved && this._lastCompute && ms - this._lastCompute < 1000) return;
+    this._lastCompute = ms;
+    this._obs = { lat: observer.lat, lon: observer.lon, alt: observer.alt };
+
     const time = Astronomy.MakeTime(date);
     const obs = new Astronomy.Observer(observer.lat, observer.lon, observer.alt || 0);
 

@@ -19,9 +19,15 @@ export class SatelliteLayer {
     this.satrecs = [];     // { name, satrec }
     this.group_name = 'visual';
 
-    // One Points cloud for all sats — fast even with thousands.
+    // One Points cloud for all sats — fast even with thousands. The position
+    // buffer is preallocated ONCE and written in place every frame (we only ever
+    // bump needsUpdate + setDrawRange), so the per-frame update allocates nothing
+    // and never re-uploads a brand-new attribute to the GPU.
+    this.maxPoints = 12000;            // generous: visual+active groups are well under this
+    this._posArr = new Float32Array(this.maxPoints * 3);
     this.geom = new THREE.BufferGeometry();
-    this.geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3));
+    this.geom.setAttribute('position', new THREE.BufferAttribute(this._posArr, 3));
+    this.geom.setDrawRange(0, 0);
     this.points = new THREE.Points(this.geom, new THREE.PointsMaterial({
       color: 0x7CFFB2, size: 7, sizeAttenuation: false,
       map: dotTexture(0x7CFFB2), transparent: true, depthTest: false,
@@ -87,11 +93,13 @@ export class SatelliteLayer {
       height: (observer.alt || 0) / 1000, // km
     };
 
-    const positions = [];
+    const posArr = this._posArr;
+    let n = 0;
     this.visibleSats = [];
     let issPos = null;
 
     for (const { name, satrec } of this.satrecs) {
+      if (n >= this.maxPoints) break;
       const pv = satellite.propagate(satrec, date);
       if (!pv || !pv.position) continue;
       const ecf = satellite.eciToEcf(pv.position, gmst);
@@ -101,7 +109,8 @@ export class SatelliteLayer {
 
       const azDeg = (look.azimuth * (180 / Math.PI) + 360) % 360;
       const p = domePosition(azDeg, altDeg, SHELLS.satellites);
-      positions.push(p.x, p.y, p.z);
+      posArr[n * 3] = p.x; posArr[n * 3 + 1] = p.y; posArr[n * 3 + 2] = p.z;
+      n++;
 
       // height above Earth (km) and orbital speed (km/s)
       const gd = satellite.eciToGeodetic(pv.position, gmst);
@@ -117,15 +126,30 @@ export class SatelliteLayer {
       if (isISS) issPos = { p, name, heightKm: gd.height, speed };
     }
 
-    this.geom.setAttribute('position',
-      new THREE.BufferAttribute(new Float32Array(positions), 3));
-    this.geom.computeBoundingSphere();
+    // Commit in place: only flag the used range dirty + redraw n points. No new
+    // typed array, no new attribute, no full re-upload. We also narrow the GPU
+    // upload to just the 0..n*3 floats actually written this frame via
+    // addUpdateRange (three r160 API — verified against the CDN-pinned 0.160.0
+    // src: WebGLAttributes uploads `updateRanges` with bufferSubData and clears
+    // them each frame; the legacy `updateRange` object is the deprecated path).
+    // Without a range, needsUpdate re-uploads the whole 12000-point buffer
+    // (~144 KB) every frame regardless of how few sats are up.
+    const posAttr = this.geom.attributes.position;
+    posAttr.clearUpdateRanges?.();
+    posAttr.addUpdateRange?.(0, n * 3);
+    this.geom.setDrawRange(0, n);
+    posAttr.needsUpdate = true;
+    // Bounding sphere big enough to cover the whole satellite shell so frustum
+    // culling never wrongly hides points as the count changes frame to frame.
+    if (!this.geom.boundingSphere) this.geom.boundingSphere = new THREE.Sphere();
+    this.geom.boundingSphere.center.set(0, 0, 0);
+    this.geom.boundingSphere.radius = SHELLS.satellites * 1.01;
 
     this._placeModels(date);
 
     if (issPos) {
       this.highlightLabel.visible = true;
-      this.highlightLabel.position.copy(issPos.p.clone());
+      this.highlightLabel.position.copy(issPos.p);   // p is already a fresh per-frame Vector3
       this.highlightLabel.position.y += 14;
       const txt = `ISS\n${Math.round(issPos.heightKm)} km  ${(issPos.speed || 0).toFixed(1)} km/s`;
       this._setLabel(txt);

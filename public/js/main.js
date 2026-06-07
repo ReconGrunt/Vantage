@@ -437,7 +437,17 @@ for (const k of Object.keys(state.layers)) layers[k].setVisible(state.layers[k])
 // --- data ---
 async function refreshAircraft() {
   const r = await layers.aircraft.poll(state.observer, state.rangeKm);
-  if (r) ui.setCount('aircraft', r.count);
+  if (!r) return;
+  ui.setCount('aircraft', r.count);
+  // Surface feed health so a down/stale source is visible instead of silently
+  // showing frozen traffic. `error` = the fetch itself failed (client offline /
+  // server down) — we keep dead-reckoning the last-known planes. `stale` = the
+  // server served last-known data because both ADS-B sources failed upstream.
+  // A clean poll restores "Live". Only the aircraft feed drives this banner; the
+  // dome keeps running on cached/extrapolated data either way.
+  if (r.error) ui.status('Aircraft feed offline — showing last-known');
+  else if (r.stale) ui.status('Aircraft feed stale — upstream down');
+  else ui.status('Live');
 }
 async function refreshWeather() {
   try {
@@ -458,6 +468,11 @@ async function initData() {
 initData();
 setInterval(refreshAircraft, 4_000); // near real-time; dead-reckoned between polls
 setInterval(refreshWeather, 10 * 60_000);
+// Refresh TLEs periodically so a 24/7 kiosk/projector keeps fresh orbital
+// elements: SGP4 accuracy degrades as the TLE epoch ages (drift grows over a
+// day+), and the dome may run for days. The server caches TLEs for 6h, so this
+// reload is network-cheap (mostly a cache hit) and just rebuilds the satrecs.
+setInterval(() => { layers.satellites.load(state.satGroup).catch(() => {}); }, 6 * 60 * 60_000);
 
 // --- ISS pass alerts ---
 const issEl = document.getElementById('iss-alert');
@@ -656,5 +671,10 @@ if (!localStorage.getItem('observer') && navigator.geolocation) {
   navigator.geolocation.getCurrentPosition((pos) => {
     const obs = { lat: pos.coords.latitude, lon: pos.coords.longitude, alt: pos.coords.altitude || 10 };
     state.observer = obs; saveObserver(obs); ui.setObserver(obs); refreshAircraft();
-  }, () => {}, { timeout: 8000 });
+  }, () => {
+    // GPS denied/unavailable on first run: we silently keep the default location
+    // (loadObserver()'s NYC fallback) so the dome still runs. Hint the user they
+    // can set it manually under "Your location" rather than leaving them guessing.
+    ui.status('Location unavailable — using default (set it under “Your location”)');
+  }, { timeout: 8000 });
 }
