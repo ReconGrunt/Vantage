@@ -117,10 +117,11 @@ scene.add(ambient);
 const hemi = new THREE.HemisphereLight(0x88a0c0, 0x223044, 0.5);
 scene.add(hemi);
 // Belly fill: in the ceiling view we look UP at aircraft undersides, which the Sun
-// leaves in shadow — a black silhouette you can't read. A soft cool light from
-// below lifts the belly so the actual model shape/livery is visible.
-const bellyFill = new THREE.DirectionalLight(0xbcd4ff, 0.9);
-bellyFill.position.set(0, -1, 0.15);
+// leaves in shadow — a black silhouette you can't read. A cool light from below
+// lifts the belly so the model shape/livery stays legible day OR night (the planes
+// should always be clearly visible in the "see through the roof" view).
+const bellyFill = new THREE.DirectionalLight(0xc8dcff, 1.5);
+bellyFill.position.set(0, -1, 0.12);
 scene.add(bellyFill);
 
 const skyGroup = buildSky(scene);
