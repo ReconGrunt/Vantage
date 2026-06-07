@@ -1,6 +1,6 @@
 // ui.js — overlay panel: layer toggles, observer location, clock, object info.
 
-export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, onBloomToggle, onAtcToggle, onNavToggle, onWeatherToggle, onGroundToggle, onLabelFields, onDisplayChange, onNorthChange, onZoom, onAutoNorth, onCalibration, onRange, onSatGroupChange }) {
+export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, onBloomToggle, onAtcToggle, onNavToggle, onWeatherToggle, onGroundToggle, onLabelFields, onDisplayChange, onNorthChange, onZoom, onSkySpan, onSkyOnly, onAutoNorth, onCalibration, onRange, onSatGroupChange }) {
   const $ = (id) => document.getElementById(id);
 
   // layer toggles
@@ -52,7 +52,28 @@ export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, 
   // display / projection
   const displayEl = $('display-mode');
   displayEl.value = state.display;
-  displayEl.addEventListener('change', () => onDisplayChange(displayEl.value));
+  function updateModeRows() {
+    // the "Visible sky" span only applies to the ceiling perspective view
+    $('skyspan-row').style.display = displayEl.value === 'ceiling' ? '' : 'none';
+  }
+  updateModeRows();
+  displayEl.addEventListener('change', () => { onDisplayChange(displayEl.value); updateModeRows(); });
+
+  // ceiling "visible sky" span (how wide a cone of sky fills the disc)
+  const spanEl = $('skyspan');
+  const spanVal = $('skyspan-val');
+  spanEl.value = state.skySpanDeg;
+  spanVal.textContent = `${state.skySpanDeg}°`;
+  spanEl.addEventListener('input', () => {
+    const v = parseInt(spanEl.value, 10);
+    spanVal.textContent = `${v}°`;
+    onSkySpan(v);
+  });
+
+  // aircraft-only (bare-ceiling) projection toggle
+  const skyOnlyEl = $('toggle-skyonly');
+  skyOnlyEl.checked = !!state.skyOnly;
+  skyOnlyEl.addEventListener('change', () => onSkyOnly(skyOnlyEl.checked));
 
   const northEl = $('north');
   const northVal = $('north-val');
@@ -120,6 +141,13 @@ export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, 
   compassEl.addEventListener('pointerup', (e) => { dragging = false; compassEl.releasePointerCapture?.(e.pointerId); });
   $('compass-minus').addEventListener('click', () => { if (compassEditable) applyBearing((compassBearing + 359) % 360); });
   $('compass-plus').addEventListener('click', () => { if (compassEditable) applyBearing((compassBearing + 1) % 360); });
+  // scroll over the dial to nudge the orientation degree-by-degree
+  compassEl.addEventListener('wheel', (e) => {
+    if (!compassEditable) return;
+    e.preventDefault();
+    const step = e.shiftKey ? 5 : 1;
+    applyBearing((compassBearing + (e.deltaY < 0 ? step : 360 - step)) % 360);
+  }, { passive: false });
   window.addEventListener('keydown', (e) => {
     if (!compassEditable) return;
     if (e.key === 'ArrowLeft') applyBearing((compassBearing + 359) % 360);
@@ -226,11 +254,12 @@ export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, 
       if (i.altitude) add('Altitude', i.altitude);
       if (i.speed) add('Speed', i.speed);
       if (i.heading) add('Heading', i.heading);
+      if (i.squawk) add('Squawk', i.squawk);
       if (i.phase) add('Phase', i.phase);
       if (i.rangeKm) add('Range', `${Math.round(i.rangeKm)} km`);
       if (i.azimuth != null) add('Azimuth', `${i.azimuth.toFixed(1)}°`);
-      const altv = i.altitude_deg ?? i.altitude;
-      if (typeof altv === 'number') add('Elevation', `${altv.toFixed(1)}°`);
+      // angular height above the horizon — where to point your eyes (NOT altitude)
+      if (typeof i.altitude_deg === 'number') add('Above horizon', `${i.altitude_deg.toFixed(1)}°`);
       if (data.kind === 'aircraft') {
         rows.push('<div class="info-path"><span style="color:#ffa033">▬ came from</span>'
           + '<span style="color:#49d6ff">going to ▬</span></div>');

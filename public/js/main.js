@@ -39,9 +39,11 @@ const state = {
   ground: false,       // hard ground disc off — backdrop fades dark below horizon
   weather: true,       // real cloud cover
   autoNorth: false,    // align North from device compass
-  display: 'free',     // 'free' | 'ceiling' | 'fisheye'
+  display: 'ceiling',  // 'free' | 'ceiling' | 'fisheye' — ceiling is the primary use
   northDeg: 0,         // orientation of North for ceiling/fisheye projection
   zoom: 1,             // works in every mode (FOV / fisheye disc scale)
+  skySpanDeg: 130,     // ceiling: how wide a cone of sky fills the disc (the "radius")
+  skyOnly: false,      // ceiling: hide everything but aircraft (bare-ceiling projection)
   dome: { offsetX: 0, offsetY: 0, mirror: false, fov: 180 },
 };
 const now = () => new Date();
@@ -181,11 +183,32 @@ const _viewDir = new THREE.Vector3();
 // different object switches focus; clicking empty sky clears it.
 let focused = null;
 
+// In the ceiling/fisheye projection modes OrbitControls is off, so dragging the
+// view itself rotates the sky orientation — the easy way to line the projection up
+// with the room (the compass dial does the same, finely).
+let dragOri = null;
 renderer.domElement.addEventListener('pointermove', (e) => {
   pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
   pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  if (dragOri) {
+    const dx = e.clientX - dragOri.x;
+    if (Math.abs(dx) > 3) dragOri.moved = true;
+    const deg = dragOri.north - dx * 0.25;       // ~4px per degree
+    state.northDeg = ((deg % 360) + 360) % 360;
+    ui.setNorth(Math.round(state.northDeg));
+  }
+});
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (state.display === 'free' || hoveredData) return; // free look + grabbing a plane untouched
+  dragOri = { x: e.clientX, north: state.northDeg, moved: false };
+  renderer.domElement.setPointerCapture?.(e.pointerId);
+});
+renderer.domElement.addEventListener('pointerup', (e) => {
+  if (dragOri) renderer.domElement.releasePointerCapture?.(e.pointerId);
+  setTimeout(() => { dragOri = null; }, 0); // defer so the click handler can see .moved
 });
 renderer.domElement.addEventListener('click', () => {
+  if (dragOri?.moved) return;                 // a rotate-drag, not a selection click
   if (hoveredData?.kind === 'tower') return; // tower already tuned on hover
   if (hoveredData) {
     focused = hoveredData;
@@ -201,10 +224,13 @@ let hoveredData = null;
 function pick() {
   raycaster.setFromCamera(pointer, camera);
   const targets = [];
-  if (state.layers.planets) targets.push(...layers.planets.pickables.filter((o) => o.visible));
   if (state.layers.aircraft) targets.push(...layers.aircraft.pickables());
-  if (state.layers.satellites && layers.satellites.points) targets.push(layers.satellites.points);
-  targets.push(...towers.pickables());
+  // sky objects aren't pickable in the bare-ceiling (aircraft-only) projection
+  if (!state.skyOnly) {
+    if (state.layers.planets) targets.push(...layers.planets.pickables.filter((o) => o.visible));
+    if (state.layers.satellites && layers.satellites.points) targets.push(layers.satellites.points);
+    targets.push(...towers.pickables());
+  }
   const hits = raycaster.intersectObjects(targets, true); // recursive: models are groups
   const hit = hits.length ? hits[0] : null;
   hovered = hit ? hit.object : null;
@@ -258,7 +284,11 @@ function pick() {
 const ui = initUI({
   state,
   onObserverChange: (obs) => { state.observer = obs; saveObserver(obs); refreshAircraft(); refreshWeather(); rebuildTowers(); },
-  onLayerToggle: (name, on) => { state.layers[name] = on; layers[name].setVisible(on); },
+  onLayerToggle: (name, on) => {
+    state.layers[name] = on;
+    // aircraft always obey their toggle; sky layers stay hidden while "aircraft only"
+    layers[name].setVisible(name === 'aircraft' ? on : (on && !state.skyOnly));
+  },
   onLabelToggle: (name, on) => {
     state.labels[name] = on;
     if (name === 'aircraft') layers.aircraft.setLabels(on);
@@ -267,12 +297,14 @@ const ui = initUI({
   onBloomToggle: (on) => { state.bloom = on; },
   onAtcToggle: (on) => { state.atc = on; atc.setEnabled(on); },
   onNavToggle: (on) => { state.navlights = on; navLights.setVisible(on); },
-  onWeatherToggle: (on) => { state.weather = on; clouds.setVisible(on); },
+  onWeatherToggle: (on) => { state.weather = on; clouds.setVisible(on && !state.skyOnly); },
   onGroundToggle: (on) => setGround(on),
   onLabelFields: (fields) => { state.labelFields = fields; layers.aircraft.setLabelFields(fields); },
   onDisplayChange: (mode) => setDisplay(mode),
   onNorthChange: (deg) => { state.northDeg = ((deg % 360) + 360) % 360; },
   onZoom: (z) => { state.zoom = z; applyZoom(); },
+  onSkySpan: (deg) => { state.skySpanDeg = deg; applyZoom(); },
+  onSkyOnly: (on) => setSkyOnly(on),
   onAutoNorth: (on) => setAutoNorth(on),
   onCalibration: (cal) => {
     Object.assign(state.dome, cal);
@@ -293,10 +325,37 @@ layers.aircraft.setLabelFields(state.labelFields);
 function setGround(on) {
   state.ground = on;
   const g = skyGroup.getObjectByName('ground');
-  if (g) g.visible = on;
+  if (g) g.visible = on && !state.skyOnly;
+}
+
+// "Aircraft only" (bare-ceiling projection): hide everything except the live
+// aircraft so that, projected onto a ceiling, only the planes are lit and the rest
+// of the ceiling stays dark/unprojected — as if the planes are flying across the
+// bare room. We force a black background and suppress sky furniture, stars,
+// planets, satellites and clouds, then restore them (to their toggle states) when
+// switched off. Aircraft + their nav lights / contrails stay on.
+function setSkyOnly(on) {
+  state.skyOnly = on;
+  scene.background = on ? new THREE.Color(0x000000) : null;
+  applySkyVisibility();
+}
+function applySkyVisibility() {
+  const hide = state.skyOnly;
+  skyGroup.visible = !hide;
+  clouds.setVisible(!hide && state.weather);
+  layers.stars.setVisible(!hide && state.layers.stars);
+  layers.planets.setVisible(!hide && state.layers.planets);
+  layers.satellites.setVisible(!hide && state.layers.satellites);
+  towers.setVisible(!hide);
+  const g = skyGroup.getObjectByName('ground');
+  if (g) g.visible = !hide && state.ground;
 }
 fisheye.setCalibration(state.dome);
 fisheye.setFovDeg(state.dome.fov);
+
+// apply the initial display mode (ceiling by default) + sky-only state on boot
+setDisplay(state.display);
+setSkyOnly(state.skyOnly);
 
 // --- auto-North from the device compass (phones / Quest) ---
 let _orientHandler = null;
@@ -342,11 +401,11 @@ function applyZoom() {
   if (state.display === 'fisheye') {
     fisheye.setCalibration({ scale: z });
   } else {
-    // Free look at 1x ≈ a natural ~58° human field of view (standing outside,
-    // looking up). Aircraft are drawn at true angular size, so this matches what
-    // you'd actually see; zoom narrows the FOV to magnify.
-    const base = state.display === 'ceiling' ? 125 : 58;
-    camera.fov = THREE.MathUtils.clamp(base / z, 8, 135);
+    // Ceiling: the "visible sky" slider sets how wide a cone of sky maps to the
+    // disc (bigger span = more of the dome / smaller objects); zoom magnifies on
+    // top. Free look at 1x ≈ a natural ~58° human field of view.
+    const base = state.display === 'ceiling' ? state.skySpanDeg : 58;
+    camera.fov = THREE.MathUtils.clamp(base / z, 8, 160);
     camera.updateProjectionMatrix();
   }
 }
@@ -501,11 +560,24 @@ window.addEventListener('resize', () => {
 });
 fisheye.setSize(window.innerWidth, window.innerHeight);
 
-// XR entry buttons: VR (full dome) + AR (Quest passthrough overlay)
-document.body.appendChild(VRButton.createButton(renderer));
-document.body.appendChild(ARButton.createButton(renderer, {
-  optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'],
-}));
+// XR entry buttons: VR (full dome) + AR (Quest passthrough overlay).
+// Only shown when the device can actually enter that session — on a desktop /
+// projector there's no WebXR, so the disabled "VR NOT SUPPORTED" boxes would just
+// overlap the flight cards at the bottom of the screen. On a headset they appear.
+if (navigator.xr?.isSessionSupported) {
+  const xrWrap = document.createElement('div');
+  xrWrap.id = 'xr-buttons';
+  Promise.allSettled([
+    navigator.xr.isSessionSupported('immersive-vr'),
+    navigator.xr.isSessionSupported('immersive-ar'),
+  ]).then(([vr, ar]) => {
+    if (vr.value) xrWrap.appendChild(VRButton.createButton(renderer));
+    if (ar.value) xrWrap.appendChild(ARButton.createButton(renderer, {
+      optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'],
+    }));
+    if (xrWrap.childElementCount) document.body.appendChild(xrWrap);
+  });
+}
 
 // Kiosk / projector auto-launch via URL, e.g. ?display=fisheye&north=90&kiosk
 {
@@ -520,6 +592,16 @@ document.body.appendChild(ARButton.createButton(renderer, {
     state.northDeg = v;
     const r = document.getElementById('north'); if (r) r.value = v;
     const lbl = document.getElementById('north-val'); if (lbl) lbl.textContent = `${v}°`;
+  }
+  if (params.has('span')) {
+    const v = THREE.MathUtils.clamp(parseInt(params.get('span'), 10) || 130, 50, 160);
+    state.skySpanDeg = v; applyZoom();
+    const r = document.getElementById('skyspan'); if (r) r.value = v;
+    const lbl = document.getElementById('skyspan-val'); if (lbl) lbl.textContent = `${v}°`;
+  }
+  if (params.has('skyonly')) {
+    setSkyOnly(params.get('skyonly') !== '0');
+    const cb = document.getElementById('toggle-skyonly'); if (cb) cb.checked = state.skyOnly;
   }
   if (params.has('kiosk')) document.body.classList.add('kiosk');
   const plat = parseFloat(params.get('lat'));

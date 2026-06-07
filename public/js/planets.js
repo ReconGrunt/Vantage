@@ -10,9 +10,14 @@ import { SHELLS, makeTextSprite } from './sky.js';
 const R = SHELLS.planets;
 const ang = (deg) => R * deg * Math.PI / 180; // world diameter for an angular size
 
+// The Sun and Moon are truly ~0.5° across, but at a from-the-ground projection
+// that reads as a tiny dot. We magnify both (keeping their real 1:1 size ratio) so
+// they look like the Sun/Moon you'd actually notice overhead — the same visibility
+// boost philosophy as the aircraft. Tunable: bump CELESTIAL_BOOST for a bigger Sun.
+const CELESTIAL_BOOST = 3.4;
 // disc fill fractions: Sun leaves room for a corona; Moon nearly fills the sprite
-const SUN_SIZE = ang(0.533) / 0.40;
-const MOON_SIZE = ang(0.52) / 0.94;
+const SUN_SIZE = ang(0.533) / 0.40 * CELESTIAL_BOOST;
+const MOON_SIZE = ang(0.52) / 0.94 * CELESTIAL_BOOST;
 
 const BODIES = [
   { name: 'Sun', kind: 'sun', color: 0xfff4c2, size: SUN_SIZE, core: 0.30, fade: 0.40 },
@@ -90,7 +95,7 @@ export class PlanetLayer {
       o.label.position.y += Math.max(o.def.size, 8) * 0.9 + 4;
       o.sprite.userData.info = {
         type: o.def.kind === 'planet' ? 'Planet' : o.def.name,
-        azimuth: hor.azimuth, altitude: hor.altitude,
+        azimuth: hor.azimuth, altitude_deg: hor.altitude,
       };
 
       // The Moon dims with its phase (a thin crescent is much fainter than full).

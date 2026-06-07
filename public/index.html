@@ -108,15 +108,21 @@
         <h2>Display / Projection</h2>
         <label class="row sub">Mode
           <select id="display-mode">
+            <option value="ceiling" selected>Overhead (ceiling)</option>
             <option value="free">Free look (screen)</option>
-            <option value="ceiling">Overhead (ceiling)</option>
             <option value="fisheye">Fisheye dome 180° (ceiling)</option>
           </select>
+        </label>
+        <label class="row sub" id="skyspan-row">Visible sky
+          <input type="range" id="skyspan" min="50" max="160" step="1" value="130" />
+          <span class="count" id="skyspan-val">130°</span>
         </label>
         <label class="row sub">Zoom
           <input type="range" id="zoom" min="0.4" max="6" step="0.02" value="1" />
           <span class="count" id="zoom-val">1.0×</span>
         </label>
+        <label class="row"><input type="checkbox" id="toggle-skyonly" /> Aircraft only (bare ceiling)
+          <span class="count" title="Hide the sky, stars and clouds so only the planes are projected — the rest of the ceiling stays dark">proj</span></label>
         <label class="row sub" id="north-row">North at top
           <input type="range" id="north" min="0" max="359" step="1" value="0" />
           <span class="count" id="north-val">0°</span>

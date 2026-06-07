@@ -324,11 +324,15 @@ app.get('/api/weather', async (req, res) => {
   if (cached) return res.json({ ...cached, cached: true });
   try {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
-      + `&current=cloud_cover,visibility,weather_code,temperature_2m,wind_speed_10m,wind_direction_10m,is_day`;
+      + `&current=cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high`
+      + `,visibility,weather_code,temperature_2m,wind_speed_10m,wind_direction_10m,is_day`;
     const d = await fetchJson(url);
     const c = d.current || {};
     const out = {
-      cloudCover: c.cloud_cover ?? 0,           // %
+      cloudCover: c.cloud_cover ?? 0,           // % total
+      cloudLow: c.cloud_cover_low ?? null,      // % low deck (cumulus/stratus, 0-2km)
+      cloudMid: c.cloud_cover_mid ?? null,      // % mid deck (altocumulus, 2-7km)
+      cloudHigh: c.cloud_cover_high ?? null,    // % high deck (cirrus, 7-12km)
       visibility: c.visibility ?? null,         // m
       weatherCode: c.weather_code ?? null,      // WMO code
       temperature: c.temperature_2m ?? null,    // °C

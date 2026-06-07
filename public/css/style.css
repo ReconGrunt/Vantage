@@ -201,31 +201,37 @@ body.kiosk #flightboard { left: 16px; }   /* panel hidden in kiosk, reclaim the 
 
 /* compass rose */
 #compass {
-  position: fixed; right: 18px; bottom: 14px; width: 118px; height: 150px;
+  position: fixed; right: 18px; bottom: 14px; width: 168px; height: 202px;
   z-index: 20; -webkit-user-select: none; user-select: none; touch-action: none;
 }
 #compass::before {
-  content: ''; position: absolute; top: 0; left: 0; width: 118px; height: 118px;
+  content: ''; position: absolute; top: 0; left: 0; width: 168px; height: 168px;
   border-radius: 50%; background: rgba(10, 16, 26, 0.6);
   -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+  border: 1px solid transparent;
 }
-#compass-ring { position: absolute; top: 0; left: 0; width: 118px; height: 118px; transition: transform .08s linear; }
+#compass.editable::before {
+  /* make it obvious the dial is grabbable while projecting */
+  border-color: rgba(120, 180, 255, 0.55);
+  box-shadow: 0 0 14px rgba(80, 150, 255, 0.35), inset 0 0 14px rgba(80, 150, 255, 0.12);
+}
+#compass-ring { position: absolute; top: 0; left: 0; width: 168px; height: 168px; transition: transform .08s linear; }
 #compass.editable { cursor: grab; }
 #compass.editable:active { cursor: grabbing; }
 #compass-needle {
-  position: absolute; top: -3px; left: 59px; transform: translateX(-50%);
-  width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent;
-  border-bottom: 13px solid var(--accent); filter: drop-shadow(0 0 3px var(--accent));
+  position: absolute; top: -3px; left: 84px; transform: translateX(-50%);
+  width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent;
+  border-bottom: 15px solid var(--accent); filter: drop-shadow(0 0 3px var(--accent));
 }
 #compass-read {
-  position: absolute; bottom: 8px; left: 0; width: 118px; text-align: center;
-  font-size: 12px; color: var(--text); font-variant-numeric: tabular-nums;
+  position: absolute; bottom: 10px; left: 0; width: 168px; text-align: center;
+  font-size: 13px; color: var(--text); font-variant-numeric: tabular-nums;
 }
 #compass-minus, #compass-plus {
-  position: absolute; bottom: 2px; width: 24px; height: 24px; border-radius: 50%;
-  padding: 0; font-size: 15px; line-height: 1; flex: none;
+  position: absolute; bottom: 4px; width: 30px; height: 30px; border-radius: 50%;
+  padding: 0; font-size: 17px; line-height: 1; flex: none;
 }
-#compass-minus { left: 2px; } #compass-plus { right: 2px; }
+#compass-minus { left: 6px; } #compass-plus { right: 6px; }
 #compass:not(.editable) #compass-minus, #compass:not(.editable) #compass-plus { opacity: .3; pointer-events: none; }
 
 #errlog {

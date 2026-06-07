@@ -50,6 +50,10 @@ function modelKeyFor(entry) {
   }
 }
 
+// reusable temporaries for the per-frame orientation damping (see update())
+const _qPrev = new THREE.Quaternion();
+const _qTgt = new THREE.Quaternion();
+
 const POLL_MS = 4_000;
 // Real airframe lengths (m) per model bucket — keeps relative sizes honest (a
 // Cessna stays smaller than a 747) while VIS_BOOST magnifies everything enough
@@ -130,15 +134,23 @@ export class AircraftLayer {
     if (!s || !cur || !this.group.visible) { this.hidePath(); return; }
     const eye = { lat: observer.lat, lon: observer.lon, alt: (observer.alt || 0) + EYE_HEIGHT_M };
     const alt = cur.alt;
+    const h = s.heading || 0;
+    const behind = deadReckon(cur, 800000, (h + 180) % 360, 1); // ~800 km back along track
+    const ahead = deadReckon(cur, 800000, h, 1);                // ~800 km forward along track
     const r = entry.info?.route;
-    let originTgt, destTgt;
+    let originTgt = behind, destTgt = ahead;
     if (r?.origin?.lat != null && r?.destination?.lat != null) {
-      originTgt = { lat: r.origin.lat, lon: r.origin.lon };
-      destTgt = { lat: r.destination.lat, lon: r.destination.lon };
-    } else {
-      const h = s.heading || 0;
-      originTgt = deadReckon(cur, 800000, (h + 180) % 360, 1); // ~800 km behind
-      destTgt = deadReckon(cur, 800000, h, 1);                 // ~800 km ahead
+      // Use the real airports — but only when they actually sit on the right side of
+      // the aircraft. Enriched routes can be stale/mismatched (e.g. the plane is well
+      // past the listed origin), which would send both legs the SAME way and look
+      // broken. So: the destination must be roughly AHEAD and the origin roughly
+      // BEHIND the current heading; otherwise fall back to the heading extrapolation
+      // so the path always reads as one clean track through the plane.
+      const off = (b) => Math.abs((((b - h) % 360) + 540) % 360 - 180); // 0=ahead,180=behind
+      const dT = { lat: r.destination.lat, lon: r.destination.lon };
+      const oT = { lat: r.origin.lat, lon: r.origin.lon };
+      if (off(bearingDeg(cur, dT)) < 80) destTgt = dT;     // destination genuinely ahead
+      if (off(bearingDeg(cur, oT)) > 100) originTgt = oT;  // origin genuinely behind
     }
     buildLegToward(this.pathCame, cur, originTgt, eye, alt);
     buildLegToward(this.pathGoing, cur, destTgt, eye, alt);
@@ -357,22 +369,41 @@ export class AircraftLayer {
       if (this.ceilingMode) { sc *= CEIL_BOOST; cap = VIS_MAX_CEIL; }
       entry.mesh.scale.setScalar(THREE.MathUtils.clamp(sc, VIS_MIN, cap));
 
-      // ---- Orientation: yaw + pitch via lookAt, then bank (roll) on top ----
-      // IMPORTANT: for a Mesh, Object3D.lookAt points local +Z at the target
-      // (the opposite of the camera convention), and the glTF models are
-      // ORIENT-calibrated to that — so we MUST keep using lookAt or the planes
-      // fly backwards. aheadGeo includes vertical rate, so the nose also pitches
-      // up/down with climb and descent. Then we roll about the nose axis to bank.
-      // Forward direction: look a short way ahead along the track. Use a velocity
-      // floor so slow GA traffic still gets a stable heading vector, and keep the
-      // lookahead short (~2.5 s) so it follows the real path without over-curving.
+      // ---- Orientation: DEAD-LEVEL, belly toward the viewer, nose along track ----
+      // IMPORTANT: for a Mesh, Object3D.lookAt points local +Z at the target (the
+      // opposite of the camera convention), and the glTF models are ORIENT-calibrated
+      // to that — so we MUST keep using lookAt or the planes fly backwards.
+      // This is a flat-ceiling 2D projection: with up = radial the belly faces the
+      // viewer flat-on, and we aim the nose along the HORIZONTAL ground track only —
+      // NO climb pitch and NO bank, which on a top-down view just read as an odd
+      // tilt. aheadGeo stays at the plane's own altitude so the aim is purely lateral.
       const fwdSpeed = Math.max(s.velocity || 0, 55);
       const aheadGeo = deadReckon(displayed, fwdSpeed, s.heading || 0, 2.5);
-      aheadGeo.alt += (s.verticalRate || 0) * 2.5;
       const aheadLook = lookAngles(eye, aheadGeo);
       const aheadPos = domePosition(aheadLook.azimuth, aheadLook.altitude, SHELLS.aircraft);
       entry.mesh.up.copy(pos).normalize();             // radial up = belly toward observer
-      if (aheadPos.distanceToSquared(pos) > 1e-4) entry.mesh.lookAt(aheadPos);
+      if (aheadPos.distanceToSquared(pos) > 1e-4) {
+        _qPrev.copy(entry.mesh.quaternion);
+        entry.mesh.lookAt(aheadPos);                   // aim nose (+Z) down the track
+        _qTgt.copy(entry.mesh.quaternion);
+        // Directly overhead the apparent azimuth swings through a singularity as the
+        // plane crosses the zenith, which would whip/warp the model around. Slerp
+        // toward the freshly-aimed orientation instead of snapping, and damp HARD
+        // near the zenith so an overhead pass glides smoothly rather than spinning.
+        if (entry._oriented) {
+          // Ease toward the new aim; clamp the per-frame turn so a fast apparent
+          // swing can't snap. Damp progressively harder approaching the zenith,
+          // where the azimuth singularity would otherwise spin the model.
+          let blend = 0.18;
+          if (look.altitude > 70) blend *= THREE.MathUtils.clamp((90 - look.altitude) / 20, 0.05, 1);
+          const ang = _qPrev.angleTo(_qTgt);
+          const maxStep = 0.12;                        // ~7° per frame ceiling on the turn
+          if (ang > 1e-4) blend = Math.min(blend, maxStep / ang);
+          entry.mesh.quaternion.copy(_qPrev).slerp(_qTgt, THREE.MathUtils.clamp(blend, 0, 1));
+        } else {
+          entry._oriented = true;                      // first frame: take the aim as-is
+        }
+      }
       // DEAD LEVEL: this is projected onto a flat ceiling and optimised for a 2D
       // top-down view, so no banking/roll — just nose-along-track with the belly
       // facing the viewer. (Apparent climb/descent still tilts the nose slightly.)
@@ -452,9 +483,11 @@ export class AircraftLayer {
       type: entry.info?.aircraft?.type || s.type || 'Aircraft',
       callsign: s.callsign || '(none)',
       country: s.country,
-      altitude: `${Math.round(s.altitude).toLocaleString()} m`,
+      // Aircraft altitude in FEET (aviation standard / native ADS-B unit).
+      altitude: `${Math.round(s.altitude * 3.28084).toLocaleString()} ft`,
       speed: `${Math.round((s.velocity || 0) * 3.6)} km/h`,
       heading: `${Math.round(s.heading || 0)}°`,
+      squawk: s.squawk || null,
       azimuth: look.azimuth, altitude_deg: look.altitude,
     };
     if (entry.info?.aircraft) {
@@ -723,6 +756,14 @@ function buildLegToward(line, cur, target, observer, alt, stepM = 14000) {
 function toUnit(p, out) {
   const la = p.lat * DEG, lo = p.lon * DEG, c = Math.cos(la);
   return out.set(c * Math.cos(lo), c * Math.sin(lo), Math.sin(la));
+}
+
+// Initial great-circle bearing (deg, 0=N) from geodetic point a to b.
+function bearingDeg(a, b) {
+  const la1 = a.lat * DEG, la2 = b.lat * DEG, dlon = (b.lon - a.lon) * DEG;
+  const y = Math.sin(dlon) * Math.cos(la2);
+  const x = Math.cos(la1) * Math.sin(la2) - Math.sin(la1) * Math.cos(la2) * Math.cos(dlon);
+  return (Math.atan2(y, x) / DEG + 360) % 360;
 }
 
 // Linear blend between two geodetic points. Longitude is wrapped to the short way
