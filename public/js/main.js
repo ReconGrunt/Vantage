@@ -456,10 +456,19 @@ async function refreshWeather() {
   } catch { /* keep last */ }
 }
 async function initData() {
-  ui.status('Loading stars…');
-  ui.setCount('stars', await layers.stars.load());
-  ui.status('Loading satellites…');
-  ui.setCount('satellites', await layers.satellites.load(state.satGroup));
+  // Stars (HYG catalogue) and satellites (TLE) are INDEPENDENT fetches to
+  // different endpoints — load them concurrently so boot latency is max(), not
+  // sum(), of the two. Each is guarded on its own: a CelesTrak/TLE outage must
+  // NOT abort the boot (it would otherwise reject initData and skip the aircraft
+  // + weather load below, stranding the dome on "Loading…" with no traffic). On a
+  // TLE failure sats just stay empty until the 6h refresh; the rest still boots.
+  ui.status('Loading sky data…');
+  const [starN, satN] = await Promise.all([
+    layers.stars.load().catch(() => 0),
+    layers.satellites.load(state.satGroup).catch(() => 0),
+  ]);
+  ui.setCount('stars', starN);
+  ui.setCount('satellites', satN);
   ui.status('Loading aircraft…');
   await refreshAircraft();
   refreshWeather();
