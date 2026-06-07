@@ -101,6 +101,19 @@ button:hover { background: rgba(111, 211, 255, 0.28); }
 }
 #info .info-path span { min-width: 0; }
 
+/* Round "skylight" vignette for the flat-ceiling (perspective) projection.
+   No z-index: it sits right after the canvas in the DOM so it paints over the
+   sky but under every UI panel (which come later). The circle is sized to the
+   inscribed viewport circle (closest-side), so its soft black ring frames the
+   overhead cone and fades the heavily-stretched near-horizon corners to true
+   black — i.e. unlit on a projector, like the rim of a real round skylight. */
+#ceiling-mask {
+  position: fixed; inset: 0; display: none; pointer-events: none;
+  background: radial-gradient(circle closest-side at center,
+    transparent 0 80%, rgba(0,0,0,0.55) 90%, #000 100%);
+}
+body.ceiling-on #ceiling-mask { display: block; }
+
 /* ISS pass alert */
 #iss-alert {
   position: fixed; top: 14px; left: 50%; transform: translateX(-50%) translateY(-12px);
@@ -259,7 +272,12 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin-top: 6px;
   padding: 4px 0; -webkit-user-select: none; user-select: none;
 }
 
-body.kiosk #panel { display: none; }
+/* Kiosk / projecting: keep a slimmed-down panel (only the sections tagged
+   .kiosk-keep) so you still have the essential controls — display mode, visible
+   sky, zoom, North, layers, location — without the full options wall. */
+body.kiosk #panel section:not(.kiosk-keep),
+body.kiosk #panel .panel-foot { display: none; }
+body.kiosk #panel { width: 250px; }
 
 /* WebXR buttons (injected by three.js) — place VR and AR side by side */
 #VRButton { border-radius: 8px !important; transform: translateX(-82px); }

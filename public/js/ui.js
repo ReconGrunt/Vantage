@@ -1,6 +1,6 @@
 // ui.js — overlay panel: layer toggles, observer location, clock, object info.
 
-export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, onBloomToggle, onAtcToggle, onNavToggle, onWeatherToggle, onGroundToggle, onPathToggle, onLabelFields, onDisplayChange, onNorthChange, onZoom, onSkySpan, onSkyOnly, onAutoNorth, onCalibration, onRange, onSatGroupChange }) {
+export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, onBloomToggle, onAtcToggle, onNavToggle, onWeatherToggle, onGroundToggle, onPathToggle, onLabelFields, onDisplayChange, onNorthChange, onZoom, onSkySpan, onSkyOnly, onGuidesToggle, onBoardToggle, onAutoNorth, onCalibration, onRange, onSatGroupChange }) {
   const $ = (id) => document.getElementById(id);
 
   // layer toggles
@@ -70,6 +70,15 @@ export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, 
   const skyOnlyEl = $('toggle-skyonly');
   skyOnlyEl.checked = !!state.skyOnly;
   skyOnlyEl.addEventListener('change', () => onSkyOnly(skyOnlyEl.checked));
+
+  // guide lines (graticule) + live-sky info box toggles
+  const guidesEl = $('toggle-guides');
+  guidesEl.checked = state.guides !== false;
+  guidesEl.addEventListener('change', () => onGuidesToggle(guidesEl.checked));
+
+  const boardEl = $('toggle-board');
+  boardEl.checked = state.board !== false;
+  boardEl.addEventListener('change', () => onBoardToggle(boardEl.checked));
 
   const northEl = $('north');
   const northVal = $('north-val');

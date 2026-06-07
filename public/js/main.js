@@ -10,7 +10,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
-import { buildSky, setPassthrough, updateSky } from './sky.js';
+import { buildSky, setPassthrough, updateSky, setGuides } from './sky.js';
 import { StarLayer } from './stars.js';
 import { PlanetLayer } from './planets.js';
 import { SatelliteLayer } from './satellites.js';
@@ -40,11 +40,13 @@ const state = {
   showPath: true,      // draw the came-from / going-to path for the selected plane
   weather: true,       // real cloud cover
   autoNorth: false,    // align North from device compass
-  display: 'fisheye',  // 'free' | 'ceiling' | 'fisheye' — fisheye dome is the projector default
+  display: 'ceiling',  // 'free' | 'ceiling' | 'fisheye' — fisheye dome is the projector default
   northDeg: 0,         // orientation of North for ceiling/fisheye projection
   zoom: 1,             // works in every mode (FOV / fisheye disc scale)
-  skySpanDeg: 130,     // ceiling: how wide a cone of sky fills the disc (the "radius")
+  skySpanDeg: 120,     // ceiling: how wide a cone of sky fills the disc (the "radius")
   skyOnly: false,      // ceiling: hide everything but aircraft (bare-ceiling projection)
+  guides: true,        // show the graticule (horizon ring, az spokes, cardinal labels)
+  board: true,         // show the bottom-left "live sky" flight/satellite board
   dome: { offsetX: 0, offsetY: 0, mirror: false, fov: 180 },
 };
 const now = () => new Date();
@@ -315,6 +317,8 @@ const ui = initUI({
   onZoom: (z) => { state.zoom = z; applyZoom(); },
   onSkySpan: (deg) => { state.skySpanDeg = deg; applyZoom(); },
   onSkyOnly: (on) => setSkyOnly(on),
+  onGuidesToggle: (on) => { state.guides = on; setGuides(skyGroup, on); },
+  onBoardToggle: (on) => { state.board = on; flightBoard.setVisible(on); },
   onAutoNorth: (on) => setAutoNorth(on),
   onCalibration: (cal) => {
     Object.assign(state.dome, cal);
@@ -367,6 +371,8 @@ fisheye.setFovDeg(state.dome.fov);
 // apply the initial display mode (ceiling by default) + sky-only state on boot
 setDisplay(state.display);
 setSkyOnly(state.skyOnly);
+setGuides(skyGroup, state.guides);
+flightBoard.setVisible(state.board);
 
 // --- auto-North from the device compass (phones / Quest) ---
 let _orientHandler = null;
@@ -402,6 +408,11 @@ function setDisplay(mode) {
     camera.up.set(0, 1, 0);
     controls.target.set(0, 6, -10); controls.update();
   }
+  // The round "skylight" vignette only frames the perspective ceiling view: it
+  // fades the heavily-stretched near-horizon corners to black so only the
+  // well-behaved overhead cone is lit (a flat ceiling can only honestly show the
+  // sky roughly overhead — gnomonic stretch blows up toward the horizon).
+  document.body.classList.toggle('ceiling-on', mode === 'ceiling');
   applyZoom();
 }
 

@@ -85,12 +85,19 @@ export function buildSky(scene) {
   ground.position.y = -0.5;
   group.add(ground);
 
+  // Guide lines/markers (horizon ring, altitude rings, azimuth spokes, cardinal
+  // labels, zenith dot) live in their own sub-group so they can be toggled off —
+  // handy on a projector when you want only the real sky, no graticule.
+  const guides = new THREE.Group();
+  guides.name = 'guides';
+  group.add(guides);
+
   // --- horizon ring ---
-  group.add(circle(SHELLS.grid, 0, 0x3a6ea5, 2));
+  guides.add(circle(SHELLS.grid, 0, 0x3a6ea5, 2));
 
   // --- altitude rings at 30 and 60 deg ---
   for (const alt of [30, 60]) {
-    group.add(circle(SHELLS.grid, alt, 0x223a55, 1));
+    guides.add(circle(SHELLS.grid, alt, 0x223a55, 1));
   }
 
   // --- azimuth spokes every 30 deg ---
@@ -104,7 +111,7 @@ export function buildSky(scene) {
     const mat = new THREE.LineBasicMaterial({
       color: isCardinal ? 0x2d4d6e : 0x172838,
     });
-    group.add(new THREE.Line(geo, mat));
+    guides.add(new THREE.Line(geo, mat));
   }
 
   // --- cardinal + intercardinal labels ---
@@ -116,11 +123,11 @@ export function buildSky(scene) {
     const sprite = makeTextSprite(label, color || 0x9fb8d0, az % 90 === 0 ? 44 : 30);
     sprite.position.copy(azAltToVector(az, 3).multiplyScalar(SHELLS.grid));
     sprite.scale.multiplyScalar(az % 90 === 0 ? 1 : 0.7);
-    group.add(sprite);
+    guides.add(sprite);
   }
 
   // zenith marker
-  group.add(makeDot(azAltToVector(0, 90).multiplyScalar(SHELLS.grid), 0x2d4d6e, 6));
+  guides.add(makeDot(azAltToVector(0, 90).multiplyScalar(SHELLS.grid), 0x2d4d6e, 6));
 
   scene.add(group);
   return group;
@@ -152,6 +159,13 @@ export function setPassthrough(group, on) {
   const ground = group.getObjectByName('ground');
   if (backdrop) backdrop.visible = !on;
   if (ground) ground.visible = !on;
+}
+
+// Show/hide the graticule (horizon ring, altitude rings, azimuth spokes,
+// cardinal labels, zenith dot) without touching the sky backdrop itself.
+export function setGuides(group, on) {
+  const guides = group.getObjectByName('guides');
+  if (guides) guides.visible = on;
 }
 
 function circle(radius, altDeg, color, width = 1) {
