@@ -198,7 +198,7 @@ export function makeTextSprite(text, color = 0xffffff, fontPx = 32) {
   tex.minFilter = THREE.LinearFilter;
   const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
   const sprite = new THREE.Sprite(mat);
-  const worldH = canvas.height * 0.26;            // px -> world units
+  const worldH = canvas.height * 0.34;            // px -> world units (readable on a TV)
   sprite.scale.set(worldH * (canvas.width / canvas.height), worldH, 1);
   sprite.userData.isLabel = true;
   return sprite;

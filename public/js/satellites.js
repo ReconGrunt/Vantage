@@ -29,7 +29,7 @@ export class SatelliteLayer {
     this.group.add(this.points);
 
     // A floating label for the currently highlighted sat (e.g. ISS).
-    this.highlightLabel = makeTextSprite('', 0x7CFFB2, 24);
+    this.highlightLabel = makeTextSprite('', 0x7CFFB2, 36);
     this.highlightLabel.visible = false;
     this.group.add(this.highlightLabel);
 
@@ -238,7 +238,7 @@ export class SatelliteLayer {
   _setLabel(text) {
     if (this._lastLabel === text) return;
     this._lastLabel = text;
-    const fresh = makeTextSprite(text, 0x7CFFB2, 24);
+    const fresh = makeTextSprite(text, 0x7CFFB2, 36);
     this.highlightLabel.material = fresh.material;
     this.highlightLabel.scale.copy(fresh.scale);
   }

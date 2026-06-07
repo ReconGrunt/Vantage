@@ -60,11 +60,11 @@ const POLL_MS = 4_000;
 // to actually SEE what's overhead (this is a ceiling projection, not a telescope).
 const LEN_M = { jumbo: 70, airliner: 40, bizjet: 18, cessna: 9, fighter: 17, heli: 14 };
 const EYE_HEIGHT_M = 1.83;     // a ~6 ft observer standing at their location
-const VIS_BOOST = 7;           // magnification so overhead traffic is clearly visible
-const VIS_MIN = 9;             // distant/high traffic still reads as a clear dot
-const VIS_MAX = 55;            // free-look cap
-const CEIL_BOOST = 1.7;        // extra size in the "see through the roof" ceiling view
-const VIS_MAX_CEIL = 90;       // ceiling cap — bigger, but not screen-filling/distorted
+const VIS_BOOST = 9;           // magnification so overhead traffic is clearly visible
+const VIS_MIN = 13;            // distant/high traffic still reads as a clear shape
+const VIS_MAX = 70;            // free-look cap
+const CEIL_BOOST = 2.4;        // extra size in the "see through the roof" ceiling view
+const VIS_MAX_CEIL = 150;      // ceiling cap — big enough to appreciate the airframe
 const TRAIL_MAX = 48;          // trail nodes
 const TRAIL_DT = 180;          // ms between trail samples
 const CONTRAIL_MIN_ALT = 7600; // m (~25,000 ft) — contrails only form up high
@@ -229,7 +229,7 @@ export class AircraftLayer {
     trail.frustumCulled = false;
     this.group.add(trail);
 
-    const label = makeTextSprite(a.callsign || a.id, 0xdff1ff, 22);
+    const label = makeTextSprite(a.callsign || a.id, 0xdff1ff, 36);
     label.visible = false;
     this.group.add(label);
 
@@ -360,22 +360,20 @@ export class AircraftLayer {
       if (this.ceilingMode) { sc *= CEIL_BOOST; cap = VIS_MAX_CEIL; }
       entry.mesh.scale.setScalar(THREE.MathUtils.clamp(sc, VIS_MIN, cap));
 
-      // ---- Orientation: FLAT TOP-DOWN ICON that always faces the viewer ----
-      // For a ceiling projector we want every aircraft to read as the same clean
-      // top-down shape whether it's at the zenith or down by the rim — never an
-      // obliquely-foreshortened, "bent"-looking model. So we DON'T use lookAt (which
-      // pitches the nose toward/away from the camera). Instead we build the basis by
-      // hand: up = radial (belly squarely toward the viewer) and the nose = the
-      // heading direction with its radial component removed, i.e. projected into the
-      // view plane. The model stays flat-on at any elevation and just yaws to point
-      // the way it's going. (glTF models are calibrated nose = +Z, top = +Y.)
+      // ---- Orientation: LEVEL FLIGHT (up = world up, yaw to heading) ----
+      // Real aircraft fly level, so the model's UP is simply world up (+Y) and it
+      // only yaws to its heading — no roll, no pitch. Tying "up" to the radial made
+      // every plane tip a different way (looked rolled); world-up keeps them all
+      // consistently flat. Belly faces down, so looking up at the ceiling you get a
+      // clean top-down planform, and from the side (free look) it flies level. The
+      // nose follows the HORIZONTAL apparent track. (Models calibrated nose=+Z, top=+Y.)
       const fwdSpeed = Math.max(s.velocity || 0, 55);
       const aheadGeo = deadReckon(displayed, fwdSpeed, s.heading || 0, 2.5);
       const aheadLook = lookAngles(eye, aheadGeo);
       const aheadPos = domePosition(aheadLook.azimuth, aheadLook.altitude, SHELLS.aircraft);
-      _up.copy(pos).normalize();                       // belly faces the viewer
+      _up.set(0, 1, 0);                                // world up — planes fly level
       _fwd.copy(aheadPos).sub(pos);
-      _fwd.addScaledVector(_up, -_fwd.dot(_up));       // drop radial part -> stay flat
+      _fwd.y = 0;                                       // horizontal heading only
       if (_fwd.lengthSq() > 1e-8) {
         _fwd.normalize();
         _right.crossVectors(_up, _fwd).normalize();
@@ -656,7 +654,7 @@ export class AircraftLayer {
     const text = lines.join('\n');
     if (entry.labelText === text) return;
     entry.labelText = text;
-    const fresh = makeTextSprite(text, 0xdff1ff, 22);
+    const fresh = makeTextSprite(text, 0xdff1ff, 36);
     entry.label.material.map?.dispose();
     entry.label.material = fresh.material;
     entry.label.scale.copy(fresh.scale);
