@@ -40,7 +40,7 @@ const state = {
   showPath: true,      // draw the came-from / going-to path for the selected plane
   weather: true,       // real cloud cover
   autoNorth: false,    // align North from device compass
-  display: 'ceiling',  // 'free' | 'ceiling' | 'fisheye' — ceiling is the primary use
+  display: 'fisheye',  // 'free' | 'ceiling' | 'fisheye' — fisheye dome is the projector default
   northDeg: 0,         // orientation of North for ceiling/fisheye projection
   zoom: 1,             // works in every mode (FOV / fisheye disc scale)
   skySpanDeg: 130,     // ceiling: how wide a cone of sky fills the disc (the "radius")
@@ -169,7 +169,7 @@ loadModels().then((m) => {
   layers.satellites.setModels?.(m);
 });
 
-const fisheye = new FisheyeDome(768);
+const fisheye = new FisheyeDome(1024);   // sharper planes/labels on a projector
 scene.add(fisheye.cubeCam);
 
 // --- postprocessing (bloom) ---
