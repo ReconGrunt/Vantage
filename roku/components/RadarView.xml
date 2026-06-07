@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- RadarView — the shared radar render used by BOTH the interactive app
+     (RadarScene) and the ambient screensaver (ScreensaverScene). The only
+     difference is the `interactive` flag: when true we take focus and handle the
+     remote; when false it's render-only (Roku delivers no input to screensavers). -->
+<component name="RadarView" extends="Group">
+  <interface>
+    <field id="interactive" type="boolean" value="false" />
+    <field id="status" type="string" />
+  </interface>
+
+  <script type="text/brightscript" uri="pkg:/components/RadarView.brs" />
+  <script type="text/brightscript" uri="pkg:/components/lib/coords.brs" />
+  <script type="text/brightscript" uri="pkg:/components/lib/astro.brs" />
+
+  <children>
+    <Rectangle id="bg" width="1920" height="1080" color="0x00040Aff" />
+    <Poster id="grid" width="1080" height="1080" translation="[420,0]" uri="pkg:/images/radar_bg.png" />
+
+    <Group id="sweepGroup" translation="[960,540]">
+      <Poster id="sweep" width="1080" height="1080" translation="[-540,-540]" uri="pkg:/images/sweep.png" opacity="0.55" />
+    </Group>
+
+    <Group id="starLayer" />
+    <Group id="sunLayer" />
+    <Group id="blipLayer" />
+
+    <Poster id="selRing" uri="pkg:/images/sel_ring.png" width="56" height="56" visible="false" blendColor="0xffe066ff" />
+
+    <!-- cardinal labels around the rim -->
+    <Label id="lblN" text="N" translation="[950,30]"   color="0xff6b6bff" />
+    <Label id="lblE" text="E" translation="[1456,524]" color="0x9fb8d0ff" />
+    <Label id="lblS" text="S" translation="[950,1020]" color="0x9fb8d0ff" />
+    <Label id="lblW" text="W" translation="[446,524]"  color="0x9fb8d0ff" />
+
+    <!-- HUD -->
+    <Label id="title" text="LIVELYSKY  RADAR" translation="[60,40]" color="0x7fd8ffff" />
+    <Label id="status" translation="[62,92]" color="0x9fb8d0ff" />
+    <Label id="loclabel" translation="[62,1000]" color="0x9fb8d0ff" width="760" />
+    <Label id="clock" translation="[1520,40]" color="0x9fb8d0ff" width="340" horizAlign="right" />
+    <Label id="attrib" text="Aircraft data (c) adsb.lol contributors - ODbL" translation="[1300,1040]" color="0x5a7088ff" width="560" horizAlign="right" />
+    <Label id="hint" translation="[62,1040]" color="0x5a7088ff" />
+
+    <!-- selected-aircraft info card (interactive only) -->
+    <Group id="infoPanel" visible="false" translation="[1432,120]">
+      <Rectangle id="infoBg" width="430" height="290" color="0x0a1420e6" />
+      <Label id="infoText" translation="[20,18]" width="392" color="0xdfe8f4ff" wrap="true" />
+    </Group>
+
+    <!-- data + timing -->
+    <LocationTask id="locTask" />
+    <AircraftTask id="acTask" />
+    <Timer id="pollTimer" duration="5" repeat="true" />
+    <Timer id="clockTimer" duration="1" repeat="true" />
+    <Animation id="sweepAnim" duration="5" repeat="true" easeFunction="linear">
+      <FloatFieldInterpolator id="sweepInterp" key="[0.0,1.0]" keyValue="[0.0,6.2831853]" fieldToInterp="sweepGroup.rotation" />
+    </Animation>
+  </children>
+</component>

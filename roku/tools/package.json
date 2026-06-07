@@ -1,0 +1,14 @@
+{
+  "name": "livelysky-roku-tools",
+  "private": true,
+  "type": "module",
+  "description": "Build-time asset + data generators for the LivelySky Radar Roku channel (not shipped in the package).",
+  "scripts": {
+    "assets": "node gen-assets.mjs",
+    "stars": "node gen-bright-stars.mjs",
+    "all": "node gen-bright-stars.mjs && node gen-assets.mjs"
+  },
+  "dependencies": {
+    "pureimage": "^0.4.13"
+  }
+}

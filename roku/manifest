@@ -1,0 +1,28 @@
+# LivelySky Radar — Roku channel manifest
+# One package, two entry points (see source/main.brs):
+#   RunUserInterface  -> interactive radar (Home screen app)
+#   RunScreenSaver    -> ambient sweeping radar (Screensaver picker)
+# Aircraft data (c) adsb.lol contributors, ODbL — attribution shown in-app.
+
+title=LivelySky Radar
+subtitle=Live sky radar overhead
+
+major_version=1
+minor_version=0
+build_version=00001
+
+# --- app icon (focus) ---
+mm_icon_focus_hd=pkg:/images/icon_focus_hd.png
+mm_icon_focus_sd=pkg:/images/icon_focus_sd.png
+
+# --- splash ---
+splash_screen_fhd=pkg:/images/splash_fhd.png
+splash_screen_hd=pkg:/images/splash_hd.png
+splash_color=#00040A
+splash_min_time=900
+
+# design/render at 1080p; Roku scales to the panel
+ui_resolutions=fhd
+
+# This channel also acts as a screensaver: that capability comes from implementing
+# RunScreenSaver() in source/main.brs (no manifest flag is required).

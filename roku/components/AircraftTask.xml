@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Fetches live aircraft around the viewer from adsb.lol (ODbL, no key) and
+     converts each to az/alt for the radar. Set inputs then control="RUN" to poll. -->
+<component name="AircraftTask" extends="Task">
+  <interface>
+    <field id="observer" type="assocarray" />
+    <field id="rangeNm" type="float" value="160" />
+    <field id="aircraft" type="array" />
+    <field id="status" type="string" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/AircraftTask.brs" />
+  <script type="text/brightscript" uri="pkg:/components/lib/coords.brs" />
+</component>

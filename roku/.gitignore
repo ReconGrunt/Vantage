@@ -1,0 +1,6 @@
+# build-time tooling deps (generators only — outputs in images/ and data/ are committed)
+tools/node_modules/
+tools/package-lock.json
+
+# packaged channel zip
+*.zip

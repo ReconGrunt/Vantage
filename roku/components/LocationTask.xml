@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Resolves the viewer's location: a saved registry override if present, else a
+     free no-key IP geolocation, else a sane default. Outputs `location`. -->
+<component name="LocationTask" extends="Task">
+  <interface>
+    <field id="location" type="assocarray" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/LocationTask.brs" />
+</component>

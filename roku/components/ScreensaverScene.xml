@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Ambient screensaver scene (Screensaver picker). Render-only: Roku delivers no
+     remote input to screensavers, so RadarView stays in non-interactive mode. -->
+<component name="ScreensaverScene" extends="Scene">
+  <script type="text/brightscript" uri="pkg:/components/ScreensaverScene.brs" />
+  <children>
+    <RadarView id="radar" interactive="false" />
+  </children>
+</component>

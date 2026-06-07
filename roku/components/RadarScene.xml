@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Interactive app scene (Home screen launch). -->
+<component name="RadarScene" extends="Scene">
+  <interface>
+    <field id="launchArgs" type="assocarray" />
+  </interface>
+  <script type="text/brightscript" uri="pkg:/components/RadarScene.brs" />
+  <children>
+    <RadarView id="radar" interactive="true" />
+  </children>
+</component>
