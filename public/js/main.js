@@ -34,8 +34,8 @@ const state = {
   labels: { aircraft: false, stars: false },
   labelFields: { route: true, type: true, altitude: true, speed: true, heading: false, squawk: false, registration: false, vrate: false },
   bloom: false,        // off by default — the post-process pass flickers on some GPUs
-  atc: false,          // live ATC audio on hover (LiveATC.net), off by default
-  navlights: true,     // realistic aircraft lighting
+  atc: true,           // live ATC audio on hover — always on (no toggle)
+  navlights: true,     // realistic aircraft lighting — always on (no toggle)
   ground: false,       // hard ground disc off — backdrop fades dark below horizon
   weather: true,       // real cloud cover
   autoNorth: false,    // align North from device compass
@@ -115,6 +115,12 @@ const ambient = new THREE.AmbientLight(0x4a5a72, 0.6);
 scene.add(ambient);
 const hemi = new THREE.HemisphereLight(0x88a0c0, 0x223044, 0.5);
 scene.add(hemi);
+// Belly fill: in the ceiling view we look UP at aircraft undersides, which the Sun
+// leaves in shadow — a black silhouette you can't read. A soft cool light from
+// below lifts the belly so the actual model shape/livery is visible.
+const bellyFill = new THREE.DirectionalLight(0xbcd4ff, 0.9);
+bellyFill.position.set(0, -1, 0.15);
+scene.add(bellyFill);
 
 const skyGroup = buildSky(scene);
 
@@ -320,6 +326,7 @@ const ui = initUI({
 });
 clouds.setVisible(state.weather);
 setGround(state.ground);
+atc.setEnabled(state.atc);   // ATC audio on hover is always on (no toggle)
 layers.aircraft.setLabelFields(state.labelFields);
 
 function setGround(on) {

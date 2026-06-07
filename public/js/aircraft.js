@@ -135,25 +135,16 @@ export class AircraftLayer {
     const eye = { lat: observer.lat, lon: observer.lon, alt: (observer.alt || 0) + EYE_HEIGHT_M };
     const alt = cur.alt;
     const h = s.heading || 0;
-    const behind = deadReckon(cur, 800000, (h + 180) % 360, 1); // ~800 km back along track
-    const ahead = deadReckon(cur, 800000, h, 1);                // ~800 km forward along track
-    const r = entry.info?.route;
-    let originTgt = behind, destTgt = ahead;
-    if (r?.origin?.lat != null && r?.destination?.lat != null) {
-      // Use the real airports — but only when they actually sit on the right side of
-      // the aircraft. Enriched routes can be stale/mismatched (e.g. the plane is well
-      // past the listed origin), which would send both legs the SAME way and look
-      // broken. So: the destination must be roughly AHEAD and the origin roughly
-      // BEHIND the current heading; otherwise fall back to the heading extrapolation
-      // so the path always reads as one clean track through the plane.
-      const off = (b) => Math.abs((((b - h) % 360) + 540) % 360 - 180); // 0=ahead,180=behind
-      const dT = { lat: r.destination.lat, lon: r.destination.lon };
-      const oT = { lat: r.origin.lat, lon: r.origin.lon };
-      if (off(bearingDeg(cur, dT)) < 80) destTgt = dT;     // destination genuinely ahead
-      if (off(bearingDeg(cur, oT)) > 100) originTgt = oT;  // origin genuinely behind
-    }
-    buildLegToward(this.pathCame, cur, originTgt, eye, alt);
-    buildLegToward(this.pathGoing, cur, destTgt, eye, alt);
+    // Draw ONE clean straight track THROUGH the plane along its real heading: a
+    // leg back along the reverse heading (orange = came from) and a leg forward
+    // (cyan = going to), each clipped at the horizon. We deliberately do NOT route
+    // the line through the origin/destination airports — that great-circle could
+    // curve oddly across the dome or, with stale route data, send both legs the
+    // same way. The airports still appear as text in the info card.
+    const behind = deadReckon(cur, 800000, (h + 180) % 360, 1);
+    const ahead = deadReckon(cur, 800000, h, 1);
+    buildLegToward(this.pathCame, cur, behind, eye, alt);
+    buildLegToward(this.pathGoing, cur, ahead, eye, alt);
   }
 
   hidePath() { this.pathCame.visible = this.pathGoing.visible = false; }
@@ -374,13 +365,16 @@ export class AircraftLayer {
       // opposite of the camera convention), and the glTF models are ORIENT-calibrated
       // to that — so we MUST keep using lookAt or the planes fly backwards.
       // This is a flat-ceiling 2D projection: with up = radial the belly faces the
-      // viewer flat-on, and we aim the nose along the HORIZONTAL ground track only —
-      // NO climb pitch and NO bank, which on a top-down view just read as an odd
-      // tilt. aheadGeo stays at the plane's own altitude so the aim is purely lateral.
+      // viewer flat-on. We aim the nose along the apparent track but KEEP THE AHEAD
+      // POINT AT THE PLANE'S CURRENT ELEVATION (look.altitude) — i.e. it only moves
+      // in azimuth, never radially in/out. That removes the foreshortening tilt a
+      // plane gets when it's climbing toward/away from the zenith, so every aircraft
+      // reads as a clean flat top-down icon pointing the way it's going. No pitch,
+      // no bank.
       const fwdSpeed = Math.max(s.velocity || 0, 55);
       const aheadGeo = deadReckon(displayed, fwdSpeed, s.heading || 0, 2.5);
       const aheadLook = lookAngles(eye, aheadGeo);
-      const aheadPos = domePosition(aheadLook.azimuth, aheadLook.altitude, SHELLS.aircraft);
+      const aheadPos = domePosition(aheadLook.azimuth, look.altitude, SHELLS.aircraft);
       entry.mesh.up.copy(pos).normalize();             // radial up = belly toward observer
       if (aheadPos.distanceToSquared(pos) > 1e-4) {
         _qPrev.copy(entry.mesh.quaternion);
@@ -715,8 +709,10 @@ function makePathLine(color) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(PATH_MAX * 3), 3));
   g.setDrawRange(0, 0);
+  // Normal blending (not additive): additive over the bright daytime sky washes the
+  // orange/cyan toward white so you can't tell the legs apart. Normal keeps them true.
   const m = new THREE.LineBasicMaterial({
-    color, transparent: true, opacity: 0.92, depthTest: false, blending: THREE.AdditiveBlending,
+    color, transparent: true, opacity: 0.95, depthTest: false,
   });
   const line = new THREE.Line(g, m);
   line.frustumCulled = false; line.visible = false; line.renderOrder = 6;

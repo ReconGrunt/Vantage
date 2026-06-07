@@ -17,11 +17,7 @@ export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, 
     el.addEventListener('change', () => onLabelToggle(name, el.checked));
   }
 
-  // graphics: nav lights + bloom toggles
-  const navEl = $('toggle-navlights');
-  navEl.checked = state.navlights;
-  navEl.addEventListener('change', () => onNavToggle(navEl.checked));
-
+  // graphics toggles (nav lights + ATC audio are always on, so no UI control)
   const weatherEl = $('toggle-weather');
   weatherEl.checked = state.weather;
   weatherEl.addEventListener('change', () => onWeatherToggle(weatherEl.checked));
@@ -33,10 +29,6 @@ export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, 
   const bloomEl = $('toggle-bloom');
   bloomEl.checked = state.bloom;
   bloomEl.addEventListener('change', () => onBloomToggle(bloomEl.checked));
-
-  const atcEl = $('toggle-atc');
-  atcEl.checked = !!state.atc;
-  atcEl.addEventListener('change', () => onAtcToggle(atcEl.checked));
 
   // label field chips
   const fieldEls = [...document.querySelectorAll('[data-field]')];
