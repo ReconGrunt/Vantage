@@ -519,6 +519,13 @@ renderer.setAnimationLoop((t) => {
     const ac = layers.aircraft.overheadReport(state.observer);
     const sats = state.layers.satellites ? layers.satellites.overheadReport(state.observer, d) : [];
     flightBoard.render({ overhead: ac.overhead, inbound: ac.inbound, sats }, d, state.rangeUnit);
+    // Hands-free ATC: with nothing hovered/focused, follow the plane nearest the
+    // zenith and play the ATC feed closest to IT. A focused plane (handled in
+    // pick()) takes priority; tuneForAircraft debounces so this can't thrash.
+    if (!(focused?.kind === 'aircraft' && focused.entry)) {
+      const top = layers.aircraft.topOverheadEntry(state.observer);
+      if (top) atc.tune(top);
+    }
     lastBoard = t;
   }
   if (t - lastTick > 1000) { flightBoard.tick(); lastTick = t; }

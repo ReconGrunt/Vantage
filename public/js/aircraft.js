@@ -542,6 +542,20 @@ export class AircraftLayer {
     return { overhead, inbound };
   }
 
+  // The single plane closest to the zenith right now (>= overheadDeg), or null.
+  // Returns the live `entry` (with .cur and .state) so the caller can auto-tune
+  // that aircraft's nearest ATC facility hands-free, without a plane being hovered.
+  topOverheadEntry(observer, overheadDeg = 45) {
+    const eye = { lat: observer.lat, lon: observer.lon, alt: (observer.alt || 0) + EYE_HEIGHT_M };
+    let best = null, bestEl = overheadDeg;
+    for (const [, e] of this.planes) {
+      if (!e.state || !e.cur) continue;
+      const el = lookAngles(eye, e.render || e.cur).altitude;
+      if (el >= bestEl) { bestEl = el; best = e; }
+    }
+    return best;
+  }
+
   // Returns { maxEl, etaSec } only if the flight will actually cross into the
   // overhead cone within the window; null otherwise (so we never list traffic
   // that isn't really going to pass over). etaSec is interpolated for smoothness.
