@@ -16,9 +16,11 @@ import { PlanetLayer } from './planets.js';
 import { SatelliteLayer } from './satellites.js';
 import { AircraftLayer } from './aircraft.js';
 import { CloudLayer } from './clouds.js';
+import { MeteorLayer } from './meteors.js';
 import { NavLights } from './navlights.js';
 import { FlightBoard } from './flightboard.js';
 import { FisheyeDome } from './fisheye.js';
+import { CeilingBrush } from './ceiling-brush.js';
 import { loadModels } from './assets.js';
 import { DEG } from './coords.js';
 import { initUI } from './ui.js';
@@ -119,12 +121,18 @@ scene.add(ambient);
 const hemi = new THREE.HemisphereLight(0x88a0c0, 0x223044, 0.5);
 scene.add(hemi);
 // Belly fill: in the ceiling view we look UP at aircraft undersides, which the Sun
-// leaves in shadow — a black silhouette you can't read. A cool light from below
-// lifts the belly so the model shape/livery stays legible day OR night (the planes
-// should always be clearly visible in the "see through the roof" view).
-const bellyFill = new THREE.DirectionalLight(0xc8dcff, 1.5);
+// leaves in shadow — a black silhouette you can't read. A WARM-WHITE light from below
+// (like the glow of city lights on a plane's belly during a low pass) lifts the
+// underside so the airframe/livery reads clearly and looks good day OR night. (A cool
+// blue fill used to tint overhead planes an unnatural blue against the night sky.)
+const bellyFill = new THREE.DirectionalLight(0xfff1e0, 2.2);
 bellyFill.position.set(0, -1, 0.12);
 scene.add(bellyFill);
+// A second, softer straight-up fill so the planform is evenly lit from directly below
+// (the exact angle you view an overhead plane from on the ceiling), not just raked.
+const bellyFill2 = new THREE.DirectionalLight(0xeaf0ff, 0.8);
+bellyFill2.position.set(0, -1, 0);
+scene.add(bellyFill2);
 
 const skyGroup = buildSky(scene);
 
@@ -136,6 +144,10 @@ const layers = {
 };
 
 const clouds = new CloudLayer(scene);
+// Meteors are part of the night sky: they follow the star layer's visibility (and
+// are hidden in the bare-ceiling "aircraft only" mode). The layer adds its own group
+// to the scene; we drive it each frame with (elapsed, night, cover) from the loop.
+const meteors = new MeteorLayer(scene);
 const navLights = new NavLights(scene, layers.aircraft.geo);
 const flightBoard = new FlightBoard();
 const atc = new AtcAudio();
@@ -299,6 +311,8 @@ const ui = initUI({
     state.layers[name] = on;
     // aircraft always obey their toggle; sky layers stay hidden while "aircraft only"
     layers[name].setVisible(name === 'aircraft' ? on : (on && !state.skyOnly));
+    // meteors are part of the night sky — they ride the stars toggle (and skyOnly)
+    if (name === 'stars') meteors.setVisible(on && !state.skyOnly);
   },
   onLabelToggle: (name, on) => {
     state.labels[name] = on;
@@ -359,6 +373,7 @@ function applySkyVisibility() {
   skyGroup.visible = !hide;
   clouds.setVisible(!hide && state.weather);
   layers.stars.setVisible(!hide && state.layers.stars);
+  meteors.setVisible(!hide && state.layers.stars); // meteors ride the star layer
   layers.planets.setVisible(!hide && state.layers.planets);
   layers.satellites.setVisible(!hide && state.layers.satellites);
   towers.setVisible(!hide);
@@ -367,6 +382,11 @@ function applySkyVisibility() {
 }
 fisheye.setCalibration(state.dome);
 fisheye.setFovDeg(state.dome.fov);
+
+// Paint-to-reveal ceiling mask: lets the user brush the projected sky into the exact
+// shape of their real flat ceiling (reveal sky / black out the spill). Self-contained
+// 2D overlay + controls; main.js only tells it the current display mode + window size.
+const ceilingBrush = new CeilingBrush();
 
 // apply the initial display mode (ceiling by default) + sky-only state on boot
 setDisplay(state.display);
@@ -413,6 +433,8 @@ function setDisplay(mode) {
   // well-behaved overhead cone is lit (a flat ceiling can only honestly show the
   // sky roughly overhead — gnomonic stretch blows up toward the horizon).
   document.body.classList.toggle('ceiling-on', mode === 'ceiling');
+  // the painted ceiling mask only applies over a projector image (ceiling/fisheye)
+  ceilingBrush?.setDisplayMode(mode);
   applyZoom();
 }
 
@@ -529,11 +551,17 @@ renderer.setAnimationLoop((t) => {
   if (state.layers.satellites) layers.satellites.update(state.observer, d);
   layers.aircraft.ceilingMode = state.display !== 'free'; // low-flyover drama overhead
   if (state.layers.aircraft) layers.aircraft.update(state.observer, t);
+
+  // Night + cloud factors are needed by several layers this frame (nav-lights, the
+  // sky tint, and meteors), so compute them ONCE here and reuse — no double work.
+  //   night = 0 in daylight → 1 in deep night (Sun ~8° below the horizon).
+  //   cover = effective cloud cover, 0 when weather is off (same value nav-lights used).
+  const night = THREE.MathUtils.clamp(-layers.planets.sunAltitude / 8, 0, 1);
+  const cover = state.weather ? clouds.currentCoverage : 0;
+
   navLights.setVisible(state.navlights && state.layers.aircraft);
   if (state.navlights && state.layers.aircraft) {
-    const night = THREE.MathUtils.clamp(-layers.planets.sunAltitude / 8, 0, 1);
-    const cloud = state.weather ? clouds.currentCoverage : 0;
-    navLights.update(layers.aircraft.planes, elapsed, night, cloud);
+    navLights.update(layers.aircraft.planes, elapsed, night, cover);
   }
 
   // sun-driven lighting
@@ -547,10 +575,15 @@ renderer.setAnimationLoop((t) => {
   renderer.toneMappingExposure = 0.85 + day * 0.35;
 
   // realistic sky colour, weather clouds, and matching star visibility
-  const cover = state.weather ? clouds.currentCoverage : 0;
   updateSky(skyGroup, sunDir, a, cover * 0.7);
   if (state.layers.stars) layers.stars.setSky(a, cover);
   if (state.weather) clouds.update(elapsed, sunDir, a);
+
+  // Meteors ride the star layer's visibility (and skyOnly). Only drive them when
+  // shown — mirrors how layers.stars.update is gated by state.layers.stars. They
+  // self-gate internally on `night` (rare at dusk, frequent deep at night) and fade
+  // out as `cover` rises (a clear sky shows more).
+  if (state.layers.stars && !state.skyOnly) meteors.update(state.observer, d, elapsed, night, cover);
 
   if (state.display !== 'fisheye' && t - lastPick > 90) { pick(); lastPick = t; }
   if (t - lastPump > 500) { layers.aircraft.pump(3); lastPump = t; }
@@ -610,6 +643,7 @@ window.addEventListener('resize', () => {
   composer.setSize(window.innerWidth, window.innerHeight);
   bloom.setSize(window.innerWidth / 2, window.innerHeight / 2);
   fisheye.setSize(window.innerWidth, window.innerHeight);
+  ceilingBrush.resize();
 });
 fisheye.setSize(window.innerWidth, window.innerHeight);
 

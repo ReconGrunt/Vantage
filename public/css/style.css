@@ -114,6 +114,31 @@ button:hover { background: rgba(111, 211, 255, 0.28); }
 }
 body.ceiling-on #ceiling-mask { display: block; }
 
+/* Paint-to-reveal ceiling mask (js/ceiling-brush.js). A full-screen 2D canvas that
+   sits over the WebGL view: opaque-black pixels black out the projection, transparent
+   pixels reveal the sky. Shown only when "Custom ceiling shape" is enabled in a
+   projector mode; it then REPLACES the fixed round skylight vignette. pointer-events
+   stays off (so view rotation/hover pass through the revealed sky) until the user
+   enters Paint mode, when it captures the mouse to brush. */
+#ceiling-brush { position: fixed; inset: 0; display: none; pointer-events: none; }
+body.custom-ceiling #ceiling-brush { display: block; }
+body.custom-ceiling #ceiling-mask { display: none !important; }
+body.brush-paint #ceiling-brush { pointer-events: auto; cursor: none; }
+
+/* Brush-size ring that follows the cursor while painting. */
+#brush-cursor {
+  position: fixed; left: 0; top: 0; width: 120px; height: 120px;
+  margin: 0; border-radius: 50%; transform: translate(-50%, -50%);
+  border: 1.5px solid rgba(111, 211, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(0, 0, 0, 0.45);
+  pointer-events: none; display: none; z-index: 40;
+}
+body.brush-paint #brush-cursor { display: block; }
+
+/* Reveal/Hide brush-mode buttons share the .unit-btn look; lit when selected. */
+.cs-mode.active { background: rgba(111, 211, 255, 0.32); border-color: var(--accent); color: #fff; }
+#ceilshape summary { font-size: 12px; color: var(--accent); cursor: pointer; padding: 4px 0; }
+
 /* ISS pass alert */
 #iss-alert {
   position: fixed; top: 14px; left: 50%; transform: translateX(-50%) translateY(-12px);

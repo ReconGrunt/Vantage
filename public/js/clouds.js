@@ -50,13 +50,27 @@ export class CloudLayer {
         float noise(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
           float a=hash(i),b=hash(i+vec2(1,0)),c=hash(i+vec2(0,1)),d=hash(i+vec2(1,1));
           return mix(mix(a,b,f.x),mix(c,d,f.x),f.y); }
-        float fbm(vec2 p){ float v=0.0,a=0.5; for(int i=0;i<5;i++){ v+=a*noise(p); p*=2.03; a*=0.5;} return v; }
+        // 3 octaves (was 5): clouds are soft and the top two octaves ride at amplitude
+        // 1/16–1/32 — below the coverage threshold's resolution, so they barely register
+        // yet cost ~40% of the noise() samples. We start the base amplitude a touch higher
+        // (0.6 vs 0.5) so the SUM of the 3 surviving octaves keeps roughly the same overall
+        // magnitude/contrast the coverage->threshold mapping below was tuned against (a given
+        // cover value still hits the same density). Same lacunarity/gain keep the visible low
+        // octaves identical in feel. This runs 6x per frame under the fisheye cube cam, so
+        // the 5→3 cut is the single biggest realtime win on the default projector path.
+        float fbm(vec2 p){ float v=0.0,a=0.6; for(int i=0;i<3;i++){ v+=a*noise(p); p*=2.03; a*=0.5;} return v; }
 
         // one cloud deck: noise field -> coverage-driven density, faded at horizon.
         // soft = edge softness (cirrus is broad/feathery, cumulus is crisper).
-        float deck(vec2 p, float cover, float soft, float horizon) {
+        // single>0.5 uses ONE fbm instead of two warped fbms: the broad/feathery HIGH
+        // cirrus deck is so soft and stretched that the second decorrelating fbm warp
+        // doesn't read — dropping it there saves a whole fbm/fragment at no visible cost.
+        // LOW/MID keep the dual warp (they need crisp, varied blob edges).
+        float deck(vec2 p, float cover, float soft, float horizon, float single) {
           if (cover <= 0.001) return 0.0;
-          float n = fbm(p) * 0.6 + fbm(p * 2.7 + 7.3) * 0.4;
+          float n = single > 0.5
+            ? fbm(p)
+            : fbm(p) * 0.6 + fbm(p * 2.7 + 7.3) * 0.4;
           // map coverage 0..1 to a threshold; at full cover the deck is near-gapless
           float thresh = mix(1.02, 0.02, cover);
           float dens = smoothstep(thresh, thresh + soft, n);
@@ -72,20 +86,27 @@ export class CloudLayer {
           vec2 pc = vDir.xz / max(alt, 0.10);
           vec2 drift = uWind * uTime;
 
-          // LOW cumulus — fat crisp puffs (large blobs), opaque
-          float dLow  = deck(pc * 1.25 + drift,               uCovLow,  0.20, horizon);
-          // MID altocumulus — finer dapples
-          float dMid  = deck(pc * 2.6  + drift * 1.3 + 19.0,  uCovMid,  0.26, horizon);
-          // HIGH cirrus — streaked along one axis, broad & feathery, translucent
+          // LOW cumulus — fat crisp puffs (large blobs), opaque (dual-fbm warp)
+          float dLow  = deck(pc * 1.25 + drift,               uCovLow,  0.20, horizon, 0.0);
+          // MID altocumulus — finer dapples (dual-fbm warp)
+          float dMid  = deck(pc * 2.6  + drift * 1.3 + 19.0,  uCovMid,  0.26, horizon, 0.0);
+          // HIGH cirrus — streaked along one axis, broad & feathery, translucent (single fbm)
           vec2 ph = vec2(pc.x * 0.40, pc.y * 2.1) * 1.5 + drift * 0.6 + 41.0;
-          float dHigh = deck(ph,                               uCovHigh, 0.42, horizon);
+          float dHigh = deck(ph,                               uCovHigh, 0.42, horizon, 1.0);
 
-          // lighting: day bright, dusk warm, night dark
+          // lighting: day bright, dusk warm, night dim (not black)
           float day = smoothstep(-6.0, 8.0, uSunAlt);
-          float civil = smoothstep(-12.0, 0.0, uSunAlt);
+          // civil twilight presence — widened to start a touch lower (-14 vs -12) so the
+          // dusk→night handoff eases into the night floor instead of snapping to it.
+          float civil = smoothstep(-14.0, 0.0, uSunAlt);
           float sd = max(dot(vDir, normalize(uSunDir)), 0.0);
           vec3 dusk = vec3(1.0, 0.55, 0.30);
-          vec3 nightCol = vec3(0.05, 0.06, 0.09);
+          // Overcast skies are never pitch black: the deck traps and scatters ground +
+          // moon + airglow light back down, so an overcast NIGHT reads as a dim moonlit
+          // blue-grey, not a void. Lifted from (0.05,0.06,0.09) — still far darker than the
+          // lit deck. Clear nights have ~0 coverage so the deck discards (a<0.004) and this
+          // floor never touches the star field; it only shows when cloud is actually up.
+          vec3 nightCol = vec3(0.085, 0.095, 0.125);
 
           // low/mid decks: grey-shaded undersides (we look up at their base)
           vec3 lowLit = mix(vec3(0.66, 0.68, 0.73), vec3(0.86, 0.88, 0.91), day);
