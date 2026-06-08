@@ -1,9 +1,10 @@
 # LivelySky
 
 A live planetarium dome that projects the **real sky above your location** — aircraft,
-satellites, planets, the Sun and the Moon — each placed at its true azimuth and
-altitude. Everything is sourced from **free, no-key data** and respects the actual
-object in flight (real callsigns, real NORAD objects, real ephemerides).
+satellites, planets, the Sun, the Moon, the **Milky Way** and live **meteor showers** —
+each placed at its true azimuth and altitude. Everything is sourced from **free, no-key
+data** and respects the actual object in flight (real callsigns, real NORAD objects,
+real ephemerides). Point a projector straight up and it becomes an immersive ceiling.
 
 Built as a Three.js + WebXR web app so the same code runs on a projector
 (Chromium kiosk), in a browser, and in **Oculus / WebXR** headsets. Apple TV
@@ -48,17 +49,30 @@ type a lat/lon/altitude in the panel.
 - **A real night sky** — 8,900+ naked-eye stars from the HYG catalogue, placed by
   their true RA/Dec and rotated into your local sky using your latitude and the
   live sidereal time. Star colours come from real B–V colour indices; sizes from
-  magnitude; they twinkle, and bright stars can be labelled.
-- **3D airliners** — each plane is a procedurally built airliner model (fuselage,
-  swept wings, tail, engines), lit by the **real Sun position**, oriented along
-  its true track, climbing/descending per its vertical rate, trailing a **fading
-  contrail**.
+  magnitude; they twinkle, the brightest get a soft glow + diffraction glint, and
+  bright stars can be labelled.
+- **The Milky Way** — a procedural band painted on the **true galactic plane**, so it
+  arcs across the dome and wheels overhead exactly as the real one does for your place
+  and time (with the brighter bulge toward the galactic centre in Sagittarius).
+- **Meteors, true to the date and place** — the major annual showers (Perseids,
+  Geminids, Quadrantids, Lyrids, …) with their **real radiants** rotated into your local
+  sky and activity that ramps around each shower's peak date; shower meteors stream out
+  of the radiant, sporadics fall toward the horizon. Quiet between showers, busy on peak
+  night — just like the real sky.
+- **3D aircraft** — each plane is the real reported flight as a per-type 3D model, lit
+  by the **real Sun position**, oriented along its true track, climbing/descending per
+  its vertical rate, trailing a **fading contrail**. Overhead in the ceiling view it
+  swells into a dramatic **low flyover** so you can read the airframe and livery.
 - **Flight info** (toggle) — aircraft type, registration, operator, and route
   (origin → destination) pulled live from adsbdb.
-- **Satellites** glowing at their true look-angles, and **planets / Sun / Moon**
-  at accurate positions.
-- **Cinematic rendering** — ACES tone mapping, bloom, environment reflections on
-  the metal, and a day/night exposure + lighting cycle driven by the Sun.
+- **Satellites** glowing at their true look-angles, a **phase-accurate Moon** (a real
+  Sun-lit sphere with the correct crescent/gibbous terminator + earthshine), and the
+  **Sun + planets** at accurate positions.
+- **A sky that matches the hour** — physically-flavoured twilight with a sunset glow
+  and the pink **Belt of Venus** opposite the Sun, real cloud decks driven by live
+  weather, and a day/night exposure + lighting cycle.
+- **Cinematic rendering** — ACES tone mapping, bloom, environment reflections on the
+  metal, and a soft-edged 180° fisheye dome with a warm horizon glow.
 
 ## Data sources (all free, no API key)
 
@@ -98,15 +112,20 @@ that radius is a display choice, not a claim about scale.
 ## Project layout
 
 ```
-server/index.js        proxy + static host (OpenSky, CelesTrak, caching)
-public/index.html      page + import map (CDN: three, satellite.js, astronomy-engine)
-public/js/coords.js    geodetic <-> az/alt <-> dome geometry
-public/js/sky.js       horizon, cardinal markers, alt/az grid, backdrop
-public/js/planets.js   Sun, Moon, planets (astronomy-engine)
-public/js/satellites.js TLE + SGP4 (satellite.js)
-public/js/aircraft.js  live planes (OpenSky) + dead reckoning
-public/js/ui.js        layer toggles, location, clock, info panel
-public/js/main.js      scene, camera, controls, render loop, WebXR
+server/index.js          proxy + static host (ADS-B, CelesTrak, weather, ATC, caching)
+public/index.html        page + import map (CDN: three, satellite.js, astronomy-engine)
+public/js/coords.js      geodetic <-> az/alt <-> dome geometry
+public/js/sky.js         horizon, cardinal markers, alt/az grid, twilight backdrop
+public/js/stars.js       HYG star field + the Milky Way
+public/js/meteors.js     date/location-accurate meteor showers + sporadics
+public/js/planets.js     Sun, phase-accurate Moon, planets (astronomy-engine)
+public/js/satellites.js  TLE + SGP4 (satellite.js)
+public/js/aircraft.js    live planes (ADS-B) + dead reckoning + ceiling low-flyover
+public/js/clouds.js      live-weather cloud decks
+public/js/fisheye.js     180° fisheye dome-master projection
+public/js/ceiling-brush.js  paint-to-reveal custom ceiling-shape mask
+public/js/ui.js          layer toggles, location, clock, info panel
+public/js/main.js        scene, camera, controls, render loop, WebXR
 ```
 
 ## Aircraft realism
@@ -134,6 +153,22 @@ Pick under **Display / Projection** in the panel, or via URL for kiosk auto-laun
   to **Reveal sky** in your ceiling's true shape (or **Black out** the spill onto the walls).
   The painted mask is saved automatically, so a kiosk keeps it across reloads. Hit **Paint**
   again to stop painting and look around.
+
+## Realtime performance
+
+The whole scene is one continuous draw loop, tuned to stay smooth on a 24/7 projector
+kiosk:
+
+- The 180° **fisheye dome renders only the 5 cube faces it actually samples** — the
+  down-facing face is never seen at ≤180°, so it's skipped (~17% off the dome's GPU
+  cost, with zero change to any pixel).
+- The **cloud shader** uses a trimmed multi-octave noise (≈half the samples) since the
+  dome re-renders the scene per cube face.
+- **Satellites** upload only the points currently above the horizon; the **ephemeris**
+  (Sun/Moon/planets) solves at ~1 Hz; per-frame allocations in the hot paths are zero.
+
+Details and before/after numbers are in [`SPRINT3_SUMMARY.md`](SPRINT3_SUMMARY.md) and
+[`OPTIMIZATION_SUMMARY.md`](OPTIMIZATION_SUMMARY.md).
 
 ## VR & passthrough AR (Oculus Quest)
 
