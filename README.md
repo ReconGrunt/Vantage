@@ -128,6 +128,12 @@ Pick under **Display / Projection** in the panel, or via URL for kiosk auto-laun
 - **North at top** slider aligns the projection to your room (`&north=90`).
 - **Fullscreen / kiosk** hides the UI; add `&kiosk` to the URL to start hidden.
 - Example projector launch: `http://localhost:3000/?display=fisheye&north=120&kiosk`
+- **Ceiling shape (paint mask)** — real ceilings aren't clean rectangles (beams, crown
+  molding, a round medallion, an alcove). Under **Display / Projection → Ceiling shape**,
+  turn on **Custom ceiling shape**, hit **Paint**, and brush directly on the projected image
+  to **Reveal sky** in your ceiling's true shape (or **Black out** the spill onto the walls).
+  The painted mask is saved automatically, so a kiosk keeps it across reloads. Hit **Paint**
+  again to stop painting and look around.
 
 ## VR & passthrough AR (Oculus Quest)
 

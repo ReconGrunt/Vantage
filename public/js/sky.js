@@ -43,21 +43,40 @@ export function buildSky(scene) {
         float civil = smoothstep(-14.0, -2.0, uSunAlt); // twilight presence
 
         // base palettes
+        // Night kept DARK (unchanged) so stars + the Milky Way pop on a ceiling.
+        // Day deepened a touch: a richer zenith blue and a more luminous horizon give
+        // the daytime dome more depth without going garish.
         vec3 nightZen = vec3(0.012, 0.018, 0.045);
         vec3 nightHor = vec3(0.030, 0.045, 0.075);
-        vec3 dayZen   = vec3(0.16, 0.33, 0.62);
-        vec3 dayHor   = vec3(0.55, 0.70, 0.88);
+        vec3 dayZen   = vec3(0.13, 0.31, 0.66);
+        vec3 dayHor   = vec3(0.62, 0.76, 0.92);
 
         float t = clamp(h * 0.5 + 0.5, 0.0, 1.0);
         vec3 night = mix(nightHor, nightZen, t);
         vec3 dayc  = mix(dayHor, dayZen, pow(t, 0.8));
         vec3 col = mix(night, dayc, day);
 
-        // sunset / sunrise glow toward the Sun, strongest near the horizon
+        // sunset / sunrise glow toward the Sun, strongest near the horizon. Widened
+        // (pow 6 -> 4.5 spreads the warm band along the horizon) and warmed slightly for
+        // a richer, more believable sunset without tipping into a garish orange wash.
         float sd = max(dot(vDir, normalize(uSunDir)), 0.0);
         float horizon = 1.0 - smoothstep(0.0, 0.35, h);
-        vec3 glow = vec3(1.0, 0.45, 0.18) * pow(sd, 6.0) * horizon * civil * 1.2;
+        vec3 glow = vec3(1.0, 0.50, 0.26) * pow(sd, 4.5) * horizon * civil * 1.25;
         col += glow;
+
+        // Belt of Venus / anti-twilight arch: a soft pink-magenta band low on the sky on
+        // the side OPPOSITE the Sun during twilight. Physically it is the band of sunlit
+        // upper atmosphere just above Earth's own rising shadow; it sits a little above
+        // the anti-solar horizon and is strongest when the Sun is just below the horizon.
+        // We key it off the ANTI-sun direction so it naturally lands opposite the warm
+        // glow above, band it in altitude (a soft arch a bit above the horizon), gate it
+        // by the same civil-twilight term (so it vanishes by day and at deep night), and
+        // peak it in a Sun-depth window around -2..-8 deg.
+        float anti = max(dot(vDir, -normalize(uSunDir)), 0.0);
+        float bovBand = smoothstep(0.02, 0.16, h) * (1.0 - smoothstep(0.16, 0.46, h));
+        float bovWindow = smoothstep(-10.0, -2.0, uSunAlt) * (1.0 - smoothstep(-2.0, 4.0, uSunAlt));
+        vec3 bov = vec3(0.93, 0.62, 0.70) * pow(anti, 3.0) * bovBand * civil * bovWindow * 0.9;
+        col += bov;
 
         // weather haze lifts/greys the horizon
         col = mix(col, vec3(0.5, 0.55, 0.62), uHaze * horizon * (0.25 + 0.5 * day));

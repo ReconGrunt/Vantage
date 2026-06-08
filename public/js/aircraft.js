@@ -64,7 +64,8 @@ const VIS_BOOST = 9;           // magnification so overhead traffic is clearly v
 const VIS_MIN = 13;            // distant/high traffic still reads as a clear shape
 const VIS_MAX = 70;            // free-look cap
 const CEIL_BOOST = 2.4;        // extra size in the "see through the roof" ceiling view
-const VIS_MAX_CEIL = 150;      // ceiling cap — big enough to appreciate the airframe
+const FLYOVER_BOOST = 3.0;     // extra swell toward the zenith — the dramatic "low pass"
+const VIS_MAX_CEIL = 360;      // ceiling cap — big enough for a true low-flyover overhead
 const TRAIL_MAX = 48;          // trail nodes
 const TRAIL_DT = 180;          // ms between trail samples
 const CONTRAIL_MIN_ALT = 7600; // m (~25,000 ft) — contrails only form up high
@@ -358,7 +359,17 @@ export class AircraftLayer {
       const lenM = LEN_M[entry.modelKey] || (entry.isHeli ? LEN_M.heli : LEN_M.airliner);
       let sc = SHELLS.aircraft * lenM * VIS_BOOST / Math.max(look.range, 1);
       let cap = VIS_MAX;
-      if (this.ceilingMode) { sc *= CEIL_BOOST; cap = VIS_MAX_CEIL; }
+      if (this.ceilingMode) {
+        // Low-flyover drama: as a plane climbs toward the zenith — which is screen
+        // CENTRE in the ceiling/fisheye view, where perspective distortion is least —
+        // swell it up so an overhead pass reads like a dramatic low flyover and you can
+        // actually see the airframe + livery. Distant/horizon traffic stays normal-sized
+        // (and undistorted near the frame edge). The swell is uniform (setScalar), so the
+        // model never stretches — it just gets closer-looking the more overhead it is.
+        const zen = THREE.MathUtils.clamp((look.altitude - 25) / 65, 0, 1); // 0 @25° → 1 @zenith
+        sc *= CEIL_BOOST * (1 + FLYOVER_BOOST * zen * zen);
+        cap = VIS_MAX_CEIL;
+      }
       entry.mesh.scale.setScalar(THREE.MathUtils.clamp(sc, VIS_MIN, cap));
 
       // ---- Orientation: LEVEL FLIGHT (up = world up, yaw to heading) ----

@@ -8,4 +8,7 @@ stars_raw.csv
 
 # Internal agent-sprint scratchpads — keep local, never publish
 AGENT_COMMS.md
-AGENT_SWARM.md
+AGENT_SWARM*.md
+
+# Scratch model candidates being evaluated — not shipped (real models live in public/models/)
+tmp_models/

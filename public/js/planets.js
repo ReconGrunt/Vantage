@@ -42,6 +42,40 @@ export class PlanetLayer {
     this._lastCompute = 0;   // ms timestamp of the last astronomy-engine solve (throttled)
 
     for (const b of BODIES) {
+      const label = makeTextSprite(b.name, 0xcfe0f0, 24);
+
+      if (b.kind === 'moon') {
+        // The Moon is a real lit body, not a flat dimmed disc — a small sphere shaded
+        // by the actual Sun direction so you see a physically-correct crescent/gibbous
+        // terminator as seen from the ground. (See moonMaterial() for the shader.)
+        const mesh = new THREE.Mesh(
+          new THREE.SphereGeometry(b.size / 2, 32, 16),
+          moonMaterial(b.color),
+        );
+        mesh.renderOrder = 2;                     // over the sky/stars
+        // Picking + main.js metadata contract: the MESH is the pickable now.
+        mesh.userData = { kind: 'planet', name: b.name, label, info: { type: 'Solar System body' } };
+
+        // A faint additive halo behind the Moon — a soft atmospheric glow, sized a
+        // little larger than the disc. Purely cosmetic; not pickable.
+        const haloMat = new THREE.SpriteMaterial({
+          map: discTexture(0xbcc6d8, 0.0, 0.18),
+          depthTest: false, transparent: true,
+          blending: THREE.AdditiveBlending, opacity: 0.0,
+        });
+        const halo = new THREE.Sprite(haloMat);
+        halo.scale.set(b.size * 2.0, b.size * 2.0, 1);
+        halo.renderOrder = 1;
+
+        this.group.add(halo);
+        this.group.add(mesh);
+        this.group.add(label);
+        this.objects.push({ def: b, mesh, halo, label });
+        this.pickables.push(mesh);
+        continue;
+      }
+
+      // Sun + planets stay flat sprites (unchanged behaviour).
       const mat = new THREE.SpriteMaterial({
         map: discTexture(b.color, b.core ?? 0.2, b.fade ?? 0.35),
         depthTest: false, transparent: true,
@@ -49,7 +83,6 @@ export class PlanetLayer {
       const sprite = new THREE.Sprite(mat);
       sprite.scale.set(b.size, b.size, 1);
 
-      const label = makeTextSprite(b.name, 0xcfe0f0, 24);
       sprite.userData = { kind: 'planet', name: b.name, label, info: { type: 'Solar System body' } };
 
       this.group.add(sprite);
@@ -90,38 +123,96 @@ export class PlanetLayer {
     if (!this.group.visible) return;
 
     for (const o of this.objects) {
+      // The drawable is a sprite (Sun/planets) or a lit mesh (Moon); pick whichever
+      // this object owns so the shared visibility/positioning logic stays uniform.
+      const node = o.sprite || o.mesh;
       const body = Astronomy.Body[o.def.name];
       let ra, dec;
       try {
         const equ = Astronomy.Equator(body, time, obs, true, true);
         ra = equ.ra; dec = equ.dec;
-      } catch { o.sprite.visible = false; o.label.visible = false; continue; }
+      } catch { node.visible = false; o.label.visible = false; if (o.halo) o.halo.visible = false; continue; }
       const hor = Astronomy.Horizon(time, obs, ra, dec, 'normal');
 
       const above = hor.altitude > -2;
-      o.sprite.visible = above;
+      node.visible = above;
+      if (o.halo) o.halo.visible = above;
       o.label.visible = above && (o.def.kind !== 'planet' || o.def.size >= 7);
 
       if (!above) continue;
       const pos = domePosition(hor.azimuth, hor.altitude, SHELLS.planets);
-      o.sprite.position.copy(pos);
+      node.position.copy(pos);
+      if (o.halo) o.halo.position.copy(pos);
       o.label.position.copy(pos);
       o.label.position.y += Math.max(o.def.size, 8) * 0.9 + 4;
-      o.sprite.userData.info = {
+      node.userData.info = {
         type: o.def.kind === 'planet' ? 'Planet' : o.def.name,
         azimuth: hor.azimuth, altitude_deg: hor.altitude,
       };
 
-      // The Moon dims with its phase (a thin crescent is much fainter than full).
-      if (o.def.phase) {
+      // The Moon: feed the real Sun direction to its shader so the terminator (the
+      // crescent/gibbous boundary) is physically correct as seen from the ground, and
+      // report the illuminated fraction. We no longer just dim the whole disc.
+      if (o.def.phase && o.mesh) {
+        o.mesh.material.uniforms.uSunDir.value.copy(this.sunDir);
         try {
           const illum = Astronomy.Illumination(body, time);
-          o.sprite.material.opacity = 0.12 + 0.88 * illum.phase_fraction;
-          o.sprite.userData.info.phase = `${Math.round(illum.phase_fraction * 100)}% illuminated`;
+          node.userData.info.phase = `${Math.round(illum.phase_fraction * 100)}% illuminated`;
+          // The halo tracks brightness: barely there at new moon, soft at full.
+          if (o.halo) o.halo.material.opacity = 0.05 + 0.30 * illum.phase_fraction;
         } catch { /* ignore */ }
       }
     }
   }
+}
+
+// The Moon's shader: shade a sphere by the real Sun direction (world space) so the
+// lit limb always faces the Sun and the terminator is physically correct. A faint
+// blue-grey earthshine floor keeps the dark side from going pure black, and a soft
+// limb darkening + rim glow give the disc a little body. Sized to MOON_SIZE.
+function moonMaterial(color) {
+  const col = new THREE.Color(color);
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uSunDir: { value: new THREE.Vector3(0, 1, 0) },  // world-space Sun direction
+      uColor: { value: new THREE.Vector3(col.r, col.g, col.b) },
+    },
+    transparent: true,
+    depthTest: false,        // matches the Sun/planet sprites (always drawn on the dome)
+    vertexShader: `
+      varying vec3 vNormalW;   // world-space surface normal
+      varying vec3 vViewN;     // view-space normal (for the limb falloff)
+      void main() {
+        // The planets group carries no rotation, but transform through normalMatrix
+        // anyway so this stays correct if that ever changes.
+        vNormalW = normalize(mat3(modelMatrix) * normal);
+        vViewN = normalize(normalMatrix * normal);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `
+      varying vec3 vNormalW; varying vec3 vViewN;
+      uniform vec3 uSunDir; uniform vec3 uColor;
+      void main() {
+        vec3 N = normalize(vNormalW);
+        // Lambert against the Sun → the phase, for free, as seen from the ground.
+        float lambert = max(dot(N, normalize(uSunDir)), 0.0);
+        // Soft terminator so the crescent edge isn't a razor line.
+        float lit = smoothstep(0.0, 0.18, lambert);
+        // A gentle limb darkening using the view-facing component.
+        float limb = 0.55 + 0.45 * clamp(vViewN.z, 0.0, 1.0);
+
+        vec3 sunlit = uColor * (0.25 + 0.95 * lit) * limb;
+        // Earthshine: a faint cool floor on the dark side so it reads as a sphere,
+        // not a void (the "old moon in the new moon's arms").
+        vec3 earthshine = vec3(0.05, 0.07, 0.11) * (1.0 - lit);
+        vec3 c = sunlit + earthshine;
+
+        // Soft alpha at the very rim so the disc edge feathers into the sky.
+        float edge = smoothstep(0.0, 0.12, vViewN.z);
+        float a = max(lit, 0.22) * (0.6 + 0.4 * edge);
+        gl_FragColor = vec4(c, a);
+      }`,
+  });
 }
 
 const _texCache = new Map();
