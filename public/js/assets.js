@@ -11,7 +11,12 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 const FILES = {
   airliner: 'models/airliner.glb',
   jumbo: 'models/jumbo.glb',
-  bizjet: 'models/bizjet.glb',
+  // NOTE: models/bizjet.glb shipped as a low-poly SEAGULL (wrong asset), so bizjets
+  // rendered as a "bird". Interim: point the bizjet bucket at the real airliner mesh
+  // (it keeps its own 18 m LEN_M size, so a Gulfstream still reads smaller than a
+  // narrowbody). TODO: drop a real free CC-BY business-jet glb in as models/bizjet.glb
+  // and revert this + recalibrate ORIENT.bizjet via model-view.html.
+  bizjet: 'models/airliner.glb',
   cessna: 'models/cessna.glb',
   heli: 'models/heli.glb',
   fighter: 'models/fighter.glb',
@@ -24,7 +29,7 @@ const FILES = {
 const ORIENT = {
   airliner: [0, 0, 0],
   jumbo: [0, -0.82, 0],          // nose was up-left
-  bizjet: [0, Math.PI / 2, 0],   // Gulfstream model: nose was to the right (+X)
+  bizjet: [0, 0, 0],             // uses the airliner mesh (already nose -Z) until a real bizjet lands
   cessna: [0, 0, 0],
   heli: [0, Math.PI / 2, 0],     // nose was to the right (+X)
   fighter: [0, 0, 0],

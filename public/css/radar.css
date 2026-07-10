@@ -1,0 +1,195 @@
+/* radar.css — tactical top-down "scope" chrome. Shares ONE design system with
+   style.css (see its :root): near-black canvas, 1px hairline chrome, neo-grotesque
+   labels + monospace data, sharp corners. Two accents, used consistently app-wide:
+     · teal  (--live)   = live / enabled / selected-option / system-nominal
+     · amber (--accent) = the SELECTED track + true alerts (attention, so it's rare)
+   MIL-STD-2525 affiliation colours for tracks. No classification banners, no sci-fi
+   glow — the status bar reports real ADS-B link health. Everything is scoped to
+   body.radar-on / #radar-ui so the dome UI is untouched. */
+
+:root {
+  /* local aliases onto the shared palette so this file reads in scope terms */
+  --r-bg: var(--bg-2);
+  --r-panel: var(--panel);
+  --r-grid: var(--line);
+  --r-grid-2: var(--line-2);
+  --r-accent: var(--accent);   /* selected track / attention */
+  --r-live: var(--live);       /* sweep / ownship / live / enabled */
+  --r-text: var(--text);
+  --r-dim: var(--muted);
+  --r-mute: var(--mute-2);
+  --r-mono: var(--mono);
+}
+
+/* the radar canvas sits over the (paused) WebGL canvas, full-bleed — an explorable
+   map, not a fixed round scope, so no vignette/disc-fit. */
+#radar { position: fixed; inset: 0; display: none; z-index: 1; background: var(--r-bg); }
+
+/* radar mode replaces the ENTIRE dome UI with its own self-contained console. */
+body.radar-on #ceiling-mask,
+body.radar-on #ceiling-brush,
+body.radar-on #brush-cursor,
+body.radar-on #flightboard,
+body.radar-on #compass,
+body.radar-on #iss-alert,
+body.radar-on #info,
+body.radar-on #panel { display: none !important; }
+
+/* ---- overlay chrome ---- */
+#radar-ui { position: fixed; inset: 0; z-index: 6; pointer-events: none; }
+#radar-ui .data {
+  font-family: var(--r-mono); font-feature-settings: 'tnum' 1, 'lnum' 1;
+  color: var(--r-text);
+}
+#radar-ui .panel {
+  background: var(--r-panel); border: 1px solid var(--r-grid); border-radius: 3px;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+
+/* ---- top command bar: system id + HONEST feed health + clock -------------------- */
+#rdr-status {
+  position: fixed; top: 0; left: 0; right: 0; height: 32px;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 14px;
+  background: linear-gradient(180deg, rgba(12, 15, 19, 0.96), rgba(12, 15, 19, 0.88));
+  border-bottom: 1px solid var(--r-grid);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  font-family: var(--r-mono); font-size: 11px; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--r-dim); pointer-events: none;
+}
+#rdr-status .rdr-brand {
+  display: flex; align-items: center; gap: 8px; color: var(--r-text); font-weight: 600;
+}
+#rdr-status .rdr-brand b { letter-spacing: 0.16em; font-weight: 700; }
+#rdr-status .rdr-brand .rdr-mode { color: var(--r-mute); letter-spacing: 0.14em; font-weight: 500; }
+#rdr-status .rdr-mark {
+  width: 13px; height: 13px; flex: none; border: 1.5px solid var(--r-live); border-radius: 2px; position: relative;
+}
+#rdr-status .rdr-mark::after { content: ''; position: absolute; inset: 3px; background: var(--r-live); border-radius: 1px; }
+#rdr-status .rdr-sys { display: flex; align-items: center; gap: 7px; }
+#rdr-status .dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--r-live);
+  box-shadow: 0 0 6px var(--r-live); animation: rdrpulse 2.4s ease-in-out infinite;
+}
+@keyframes rdrpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+#rdr-clock { color: var(--r-text); letter-spacing: 0.05em; }
+
+/* ---- control console (left rail) ------------------------------------------------ */
+#rdr-controls {
+  position: fixed; top: 44px; left: 14px; width: 278px;
+  max-height: calc(100vh - 58px); overflow-y: auto; pointer-events: auto;
+  padding: 4px 14px 14px;
+  scrollbar-width: thin; scrollbar-color: rgba(120, 150, 170, 0.35) transparent;
+}
+#rdr-controls::-webkit-scrollbar { width: 8px; }
+#rdr-controls::-webkit-scrollbar-thumb { background: rgba(120, 150, 170, 0.35); border-radius: 4px; }
+.rdr-c-head {
+  font-family: var(--r-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.16em;
+  color: var(--r-text); padding: 11px 0 9px; border-bottom: 1px solid var(--r-grid);
+  margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
+}
+.rdr-c-head::before {
+  content: ''; width: 6px; height: 6px; background: var(--r-live); border-radius: 1px;
+  box-shadow: 0 0 6px var(--r-live);
+}
+.rdr-grp { margin-bottom: 13px; }
+.rdr-grp-h {
+  font-family: var(--r-mono); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--r-dim); margin-bottom: 6px;
+}
+.rdr-row2 { display: flex; gap: 6px; align-items: center; }
+.rdr-row2 input[type="number"], .rdr-row2 select {
+  flex: 1; min-width: 0; background: var(--raise); border: 1px solid var(--r-grid);
+  color: var(--r-text); border-radius: 2px; padding: 6px 7px; font-size: 12px;
+  font-family: var(--r-mono); font-variant-numeric: tabular-nums; transition: border-color .15s;
+}
+.rdr-row2 input[type="number"]:focus, .rdr-row2 select:focus { outline: none; border-color: var(--r-live); }
+.rdr-row2 label { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--r-text); cursor: pointer; }
+.rdr-row2 input[type="checkbox"] { accent-color: var(--r-live); width: 15px; height: 15px; }
+
+.rdr-btnrow { display: flex; gap: 6px; flex-wrap: wrap; }
+.rdr-btnrow button, #rdr-recenter, .rdr-wide {
+  flex: 1; min-width: 0; background: var(--raise); border: 1px solid var(--r-grid);
+  color: var(--r-dim); border-radius: 2px; padding: 7px 8px; font-size: 10.5px;
+  letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;
+  font-family: var(--r-mono); transition: border-color .15s, color .15s, background .15s;
+}
+.rdr-btnrow button:hover, #rdr-recenter:hover, .rdr-wide:hover { border-color: var(--r-grid-2); color: var(--r-text); }
+/* an ENABLED / SELECTED option → teal (matches the dome's checked state) */
+.rdr-btnrow button.active { background: rgba(36, 211, 201, 0.16); border-color: var(--r-live); color: var(--r-text); }
+.rdr-wide { width: 100%; margin-top: 6px; }
+/* pick-on-map is an active INPUT mode → amber attention while you're placing */
+.rdr-wide.active { background: rgba(232, 85, 42, 0.18); border-color: var(--r-accent); color: #ffd8c8; }
+
+/* segmented range selector (discoverable range rings, replaces a hidden dropdown) */
+.rdr-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.rdr-seg button {
+  background: var(--raise); border: 1px solid var(--r-grid); color: var(--r-dim);
+  border-radius: 2px; padding: 7px 4px; font-size: 11px; letter-spacing: 0.04em;
+  cursor: pointer; font-family: var(--r-mono); font-variant-numeric: tabular-nums;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.rdr-seg button:hover { border-color: var(--r-grid-2); color: var(--r-text); }
+.rdr-seg button.active { background: rgba(36, 211, 201, 0.16); border-color: var(--r-live); color: var(--r-text); }
+
+.rdr-chips { display: flex; flex-direction: column; gap: 5px; }
+.rdr-chips label { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--r-text); cursor: pointer; }
+.rdr-chips input { accent-color: var(--r-live); width: 15px; height: 15px; }
+.rdr-chips .swatch { width: 9px; height: 9px; border-radius: 1px; flex: none; margin-left: auto; }
+
+/* attribution (required by the basemap tile provider's terms) */
+#rdr-attrib {
+  position: fixed; left: 14px; bottom: 8px; font-family: var(--r-mono); font-size: 9px;
+  color: var(--r-mute); opacity: 0.75; pointer-events: none; letter-spacing: 0.02em;
+}
+
+/* track list (bottom-right) */
+#rdr-tracklist {
+  position: fixed; right: 14px; bottom: 14px; width: 372px; max-height: 42vh;
+  display: flex; flex-direction: column; pointer-events: auto;
+  background: var(--r-panel); border: 1px solid var(--r-grid); border-radius: 3px;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); overflow: hidden;
+}
+.rdr-tl-head, .rdr-tl-row {
+  display: grid; grid-template-columns: 1.4fr 0.6fr 0.7fr 0.7fr 0.8fr 0.7fr;
+  gap: 8px; padding: 5px 12px; align-items: center;
+  font-family: var(--r-mono); font-size: 11px;
+}
+.rdr-tl-head {
+  color: var(--r-dim); text-transform: uppercase; letter-spacing: 0.12em;
+  border-bottom: 1px solid var(--r-grid); background: rgba(0, 0, 0, 0.25);
+}
+.rdr-tl-head span:nth-child(n+3), .rdr-tl-row span.data { text-align: right; }
+#rdr-tl-rows { overflow-y: auto; }
+.rdr-tl-row { border-bottom: 1px solid rgba(27, 34, 41, 0.6); cursor: pointer; transition: background .1s; }
+.rdr-tl-row span.data { font-feature-settings: 'tnum' 1, 'lnum' 1; color: var(--r-text); }
+.rdr-tl-row .id { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rdr-tl-row:hover { background: rgba(255, 255, 255, 0.03); }
+.rdr-tl-row.sel { background: rgba(232, 85, 42, 0.14); box-shadow: inset 2px 0 0 var(--r-accent); }
+.rdr-tl-empty {
+  padding: 14px 12px; color: var(--r-mute); font-family: var(--r-mono);
+  font-size: 11px; letter-spacing: 0.12em; text-align: center; text-transform: uppercase;
+}
+
+/* detail panel (right, appears on select) */
+#rdr-detail {
+  position: fixed; right: 14px; top: 76px; width: 288px; pointer-events: auto;
+  max-height: calc(100vh - 90px - 44vh); overflow-y: auto;
+  background: var(--r-panel); border: 1px solid var(--r-grid-2); border-radius: 3px;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  padding: 0 0 8px; font-family: var(--r-mono); font-size: 12px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5);
+}
+.rdr-d-row span.data { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
+.rdr-d-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 9px 12px; border-bottom: 2px solid var(--r-grid); margin-bottom: 4px;
+  font-weight: 700; letter-spacing: 0.05em;
+}
+.rdr-d-head .svc { color: var(--r-dim); font-size: 10px; letter-spacing: 0.14em; }
+.rdr-d-row { display: flex; justify-content: space-between; gap: 10px; padding: 3px 12px; }
+.rdr-d-row span:first-child { color: var(--r-mute); text-transform: uppercase; letter-spacing: 0.1em; font-size: 10px; }
+.rdr-d-row span.data { font-feature-settings: 'tnum' 1, 'lnum' 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  #rdr-status .dot { animation: none; }
+}

@@ -13,6 +13,7 @@ import { buildAirliner, buildHelicopter, aircraftMaterial } from './plane-model.
 import { classify, isHelicopter, CATEGORY } from './classify.js';
 import { instantiate } from './assets.js';
 import { liveryColor } from './airlines.js';
+import { EMERGENCY, emergencyFor } from './emergency.js';
 
 // Regexes matching ICAO type designators to a model bucket. Checked in order:
 // jumbo (widebody) → bizjet → small GA → airliner (default for everything else,
@@ -61,11 +62,11 @@ const POLL_MS = 4_000;
 const LEN_M = { jumbo: 70, airliner: 40, bizjet: 18, cessna: 9, fighter: 17, heli: 14 };
 const EYE_HEIGHT_M = 1.83;     // a ~6 ft observer standing at their location
 const VIS_BOOST = 9;           // magnification so overhead traffic is clearly visible
-const VIS_MIN = 13;            // distant/high traffic still reads as a clear shape
+const VIS_MIN = 20;            // distant/high traffic still reads as a clear shape (not a speck)
 const VIS_MAX = 70;            // free-look cap
 const CEIL_BOOST = 2.4;        // extra size in the "see through the roof" ceiling view
-const FLYOVER_BOOST = 3.0;     // extra swell toward the zenith — the dramatic "low pass"
-const VIS_MAX_CEIL = 360;      // ceiling cap — big enough for a true low-flyover overhead
+const FLYOVER_BOOST = 0.8;     // gentle swell toward the zenith — bounded low-pass emphasis
+const VIS_MAX_CEIL = 100;      // ceiling cap — overhead reads big but never fills the screen
 const TRAIL_MAX = 48;          // trail nodes
 const TRAIL_DT = 180;          // ms between trail samples
 const CONTRAIL_MIN_ALT = 7600; // m (~25,000 ft) — contrails only form up high
@@ -73,11 +74,11 @@ const SNAP_MS = 500;           // snap-free convergence window after a poll
 const MIN_ELEV_DEG = 5;        // hide horizon-skimming traffic (not naked-eye visible)
 const MIN_AGL_M = 450;         // hide pattern/approach traffic (~1500 ft AGL and below)
 
-// Transponder emergency squawks → aura colour + severity (0..1) for the alert glow.
-const EMERGENCY = {
-  '7500': { color: 0xff2a2a, sev: 1.0, label: 'HIJACK' },        // unlawful interference
-  '7700': { color: 0xff3b1e, sev: 0.85, label: 'EMERGENCY' },    // general emergency
-  '7600': { color: 0xffd11e, sev: 0.5, label: 'RADIO FAIL' },    // lost comms
+// ADS-B emitter category → human label (surfaced in the info / detail panels).
+const EMITTER = {
+  A1: 'Light', A2: 'Small', A3: 'Large', A4: 'Large (high-wake)', A5: 'Heavy',
+  A6: 'High-performance', A7: 'Rotorcraft', B1: 'Glider', B2: 'Balloon / airship',
+  B4: 'UAV', B6: 'Spacecraft', C1: 'Emergency vehicle', C2: 'Service vehicle',
 };
 
 // Scratch objects reused every frame to avoid per-plane allocation.
@@ -94,6 +95,10 @@ export class AircraftLayer {
     this.planes = new Map();   // id -> entry
     this.observer = null;
     this.showLabels = false;
+    this.catFilter = null;   // null = show all; else {mil,law,ems,civ:boolean} service filter
+    this.speakingId = null;  // id of the flight whose ATC feed is currently transmitting
+    this.emergencyCode = new Map(); // id -> current emergency code (enter/escalation detect + cleanup)
+    this.onIncident = null;  // callback(evt) fired when a flight ENTERS an emergency squawk
 
     // fallback procedural geometries (used until the glTF models finish loading,
     // or if a model is missing)
@@ -153,6 +158,36 @@ export class AircraftLayer {
 
   setVisible(v) { this.group.visible = v; }
 
+  // Filter which service categories are shown (mil/law/ems/civ). Applies in the dome
+  // views; the radar reads the same filter from state.cats. null/all-true = show all.
+  setCatFilter(cats) { this.catFilter = cats; }
+
+  // Mark which flight's ATC feed is currently transmitting (adds a teal "on-air" halo).
+  setSpeaking(id) { this.speakingId = id || null; }
+
+  // Current in-range aircraft squawking an emergency, most-severe first — powers the
+  // distress box + incident log. Range (NM) / bearing are from the observer's eye.
+  emergencies(observer) {
+    if (!observer) return [];
+    const eye = { lat: observer.lat, lon: observer.lon, alt: (observer.alt || 0) + EYE_HEIGHT_M };
+    const out = [];
+    for (const [, e] of this.planes) {
+      const emg = emergencyFor(e.state?.squawk);
+      if (!emg) continue;
+      const cur = e.render || e.cur;
+      if (!cur) continue;
+      const look = lookAngles(eye, cur);
+      out.push({
+        id: e.id, callsign: (e.state.callsign || '').trim() || e.id,
+        code: emg.code, label: emg.label, reason: emg.reason, sev: emg.sev, hex: emg.hex,
+        rangeNm: look.range / 1852, brgDeg: look.azimuth, altFt: cur.alt * 3.28084,
+        type: e.info?.aircraft?.type || e.state.type || '',
+      });
+    }
+    out.sort((a, b) => b.sev - a.sev || a.rangeNm - b.rangeNm);
+    return out;
+  }
+
   // Called once the real glTF models finish loading; upgrades every plane.
   setModels(models) {
     this.models = models;
@@ -211,6 +246,19 @@ export class AircraftLayer {
       entry.state = a;
       entry.lastSeen = now;
       entry.anchorAt = now;
+
+      // Emergency-squawk transition → log an incident on ENTER or on ESCALATION to a new code.
+      const prevCode = this.emergencyCode.get(a.id);
+      const isEmg = emergencyFor(a.squawk);
+      if (isEmg && isEmg.code !== prevCode) {
+        this.emergencyCode.set(a.id, isEmg.code);
+        this.onIncident?.({
+          id: a.id, callsign: (a.callsign || '').trim() || a.id,
+          code: isEmg.code, label: isEmg.label, reason: isEmg.reason, sev: isEmg.sev, hex: isEmg.hex,
+        });
+      } else if (!isEmg && prevCode) {
+        this.emergencyCode.delete(a.id);
+      }
     }
 
     // At a 4 s cadence give an aircraft a few missed polls before we drop it, so
@@ -298,6 +346,7 @@ export class AircraftLayer {
     if (entry.aura) { this.group.remove(entry.aura); entry.aura.material.dispose(); }
     entry.trail.geometry.dispose();
     this.planes.delete(id);
+    this.emergencyCode.delete(id);   // so a re-appearing emergency is treated as a fresh ENTER + re-logged
   }
 
   update(observer, nowMs) {
@@ -343,7 +392,8 @@ export class AircraftLayer {
       // be invisible in real life). Also drop anything still in the low climb-out /
       // approach band so we only show aircraft that are actually "up there".
       const aglM = displayed.alt - (observer.alt || 0);
-      const visible = look.altitude >= MIN_ELEV_DEG && aglM >= MIN_AGL_M;
+      const catOk = !this.catFilter || this.catFilter[entry.category] !== false;
+      const visible = catOk && look.altitude >= MIN_ELEV_DEG && aglM >= MIN_AGL_M;
       entry.mesh.visible = visible;
 
       if (!visible) { entry.trail.visible = false; if (entry.label) entry.label.visible = false; if (entry.aura) entry.aura.visible = false; continue; }
@@ -357,7 +407,10 @@ export class AircraftLayer {
       // through the roof" mode — gets a uniform extra bump (NOT a per-angle swell,
       // which distorted the model up close) so overhead planes read clearly.
       const lenM = LEN_M[entry.modelKey] || (entry.isHeli ? LEN_M.heli : LEN_M.airliner);
-      let sc = SHELLS.aircraft * lenM * VIS_BOOST / Math.max(look.range, 1);
+      // Slant-range floor (3 km): a genuinely-close low plane can no longer balloon
+      // unbounded — the principled cap on "low planes are huge" — while distant traffic
+      // (range > 3 km) is untouched, so only the runaway near case is clamped.
+      let sc = SHELLS.aircraft * lenM * VIS_BOOST / Math.max(look.range, 3000);
       let cap = VIS_MAX;
       if (this.ceilingMode) {
         // Low-flyover drama: as a plane climbs toward the zenith — which is screen
@@ -368,6 +421,11 @@ export class AircraftLayer {
         // model never stretches — it just gets closer-looking the more overhead it is.
         const zen = THREE.MathUtils.clamp((look.altitude - 25) / 65, 0, 1); // 0 @25° → 1 @zenith
         sc *= CEIL_BOOST * (1 + FLYOVER_BOOST * zen * zen);
+        // De-emphasise low, near-the-mask-rim traffic (still slightly perspective-stretched
+        // at the frame edge): taper it down so the eye stays on the clean overhead cone.
+        // Full size by ~45° elevation, ~60% at ~20°.
+        const edge = THREE.MathUtils.smoothstep(look.altitude, 20, 45);
+        sc *= 0.6 + 0.4 * edge;
         cap = VIS_MAX_CEIL;
       }
       entry.mesh.scale.setScalar(THREE.MathUtils.clamp(sc, VIS_MIN, cap));
@@ -383,12 +441,17 @@ export class AircraftLayer {
       const aheadGeo = deadReckon(displayed, fwdSpeed, s.heading || 0, 2.5);
       const aheadLook = lookAngles(eye, aheadGeo);
       const aheadPos = domePosition(aheadLook.azimuth, aheadLook.altitude, SHELLS.aircraft);
-      _up.set(0, 1, 0);                                // world up — planes fly level
+      // Ceiling / fisheye (looking UP through the roof): the belly must face the viewer at
+      // EVERY elevation, so "up" is the RADIAL from the dome centre (pos). This presents a
+      // clean top-down planform overhead and removes the edge-on / rolled look off-zenith
+      // that wide-FOV perspective was exaggerating. Free look keeps world-up level flight.
+      if (this.ceilingMode) _up.copy(pos).normalize(); else _up.set(0, 1, 0);
       _fwd.copy(aheadPos).sub(pos);
-      _fwd.y = 0;                                       // horizontal heading only
+      if (!this.ceilingMode) _fwd.y = 0;               // free look: horizontal heading only
       if (_fwd.lengthSq() > 1e-8) {
         _fwd.normalize();
         _right.crossVectors(_up, _fwd).normalize();
+        _fwd.crossVectors(_right, _up).normalize();    // re-orthogonalise nose ⟂ up (no shear)
         _m.makeBasis(_right, _up, _fwd);               // +X right, +Y up, +Z = nose
         _qTgt.setFromRotationMatrix(_m);
         // Ease toward the new heading and clamp the per-frame turn, so the fast
@@ -409,14 +472,24 @@ export class AircraftLayer {
       // aura — yellow for lost-comms, red for general emergency / hijack, pulsing
       // faster and brighter with severity so it's instantly spottable.
       const emg = EMERGENCY[s.squawk];
-      if (emg) {
+      const speaking = entry.id === this.speakingId;
+      if (emg || speaking) {
         if (!entry.aura) { entry.aura = makeAura(); this.group.add(entry.aura); }
-        const pulse = 0.5 + 0.5 * Math.sin(now * 0.001 * (4 + emg.sev * 6));
         entry.aura.visible = true;
         entry.aura.position.copy(pos);
-        entry.aura.scale.setScalar(entry.mesh.scale.x * (4 + emg.sev * 3) * (0.8 + 0.35 * pulse));
-        entry.aura.material.color.setHex(emg.color);
-        entry.aura.material.opacity = (0.22 + 0.6 * pulse) * (0.6 + 0.4 * emg.sev);
+        if (emg) {
+          // Emergency: red/amber, pulsing faster + brighter with severity.
+          const pulse = 0.5 + 0.5 * Math.sin(now * 0.001 * (4 + emg.sev * 6));
+          entry.aura.scale.setScalar(entry.mesh.scale.x * (4 + emg.sev * 3) * (0.8 + 0.35 * pulse));
+          entry.aura.material.color.setHex(emg.color);
+          entry.aura.material.opacity = (0.22 + 0.6 * pulse) * (0.6 + 0.4 * emg.sev);
+        } else {
+          // ATC transmitting on this flight's feed: a calm teal "on-air" halo.
+          const pulse = 0.5 + 0.5 * Math.sin(now * 0.006);
+          entry.aura.scale.setScalar(entry.mesh.scale.x * 3.2 * (0.85 + 0.25 * pulse));
+          entry.aura.material.color.setHex(0x24d3c9);
+          entry.aura.material.opacity = 0.18 + 0.32 * pulse;
+        }
       } else if (entry.aura) {
         entry.aura.visible = false;
       }
@@ -487,7 +560,16 @@ export class AircraftLayer {
       heading: `${Math.round(s.heading || 0)}°`,
       squawk: s.squawk || null,
       azimuth: look.azimuth, altitude_deg: look.altitude,
+      icao24: entry.id,
+      rangeKm: look.range / 1000,
+      emitter: EMITTER[s.category] || null,
     };
+    if (s.verticalRate != null && Math.abs(s.verticalRate) > 0.4) {
+      info.vspeed = `${s.verticalRate > 0 ? '▲' : '▼'} ${Math.abs(Math.round(s.verticalRate * 196.85)).toLocaleString()} fpm`;
+      info.phase = s.verticalRate > 0 ? 'Climbing' : 'Descending';
+    } else { info.phase = 'Level'; }
+    const emgU = emergencyFor(s.squawk);
+    if (emgU) info.squawkAlert = `${emgU.code} · ${emgU.label}`;
     if (entry.info?.aircraft) {
       const ac = entry.info.aircraft;
       info.aircraftType = [ac.manufacturer, ac.type].filter(Boolean).join(' ') || null;

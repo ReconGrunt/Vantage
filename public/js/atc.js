@@ -1,171 +1,197 @@
 // atc.js — live ATC audio for the facility an overhead/hovered aircraft is working.
 //
-// Honest caveat: per-aircraft *cockpit* audio is not public anywhere, and no free
-// source exposes a specific plane's "last transmission". The realistic, free
-// stand-in is the ATC frequency that aircraft is actually talking on, streamed
-// live by LiveATC.net — that feed carries the plane's real radio calls. We tune
-// the nearest verified major tower TO THE PLANE (not the observer) and proxy it
-// through our server (see /api/atc). It runs hands-free: when a flight is near
-// the zenith it auto-tunes its facility; hovering/focusing a plane overrides it.
+// ONE audible stream at a time. Everything routes through a single <audio> element,
+// arbitrated by a priority resolver so the operator never hears overlapping voices:
+//   manual (hovered tower / focused plane's tower)  >  kept (a ticked tower)  >  follow
+//   (the facility nearest whatever flight is closest to the zenith, hands-free).
+// (Previously each ticked tower spawned its OWN Audio element and the auto-follow ran on
+// a second element with no coordination — so several voices played at once.)
+//
+// A WebAudio analyser on that single stream detects voice activity ("someone is
+// transmitting right now"); for a plane-derived feed it reports WHICH flight is on-air so
+// the dome/scope can highlight it. Feeds are proxied same-origin via /api/atc, so the
+// analyser is not CORS-tainted. Honest caveat: LiveATC streams a tower FREQUENCY, not a
+// specific cockpit — we follow the facility working the flight, not the exact speaker.
 
 const COVERAGE_KM = 280; // only claim a feed when a verified facility is this close
-const RETUNE_MS = 6000;  // debounce: don't switch the overhead feed faster than this
+const RETUNE_MS = 6000;  // debounce the auto-follow slot so overhead churn can't thrash it
+const VAD_RMS = 0.018;   // voice-activity RMS threshold (open-channel hiss sits below this)
+const VAD_HANG = 10;     // frames to hold "talking" after the level drops (debounce squelch)
 
 export class AtcAudio {
   constructor() {
-    this.feeds = [];        // [{id,label,lat,lon}]
+    this.feeds = [];
+    this._feedById = new Map();
     this.enabled = false;
-    this.currentId = null;  // feed currently tuned
-    this.currentCall = '';  // callsign of the aircraft we're following (for the chip)
-    this._lastTuneAt = 0;   // when we last switched the overhead feed (debounce)
+
+    // intent slots (priority: manual > kept > follow); each setter just re-resolves
+    this.manual = null;    // {id,label,kind:'tower'|'plane',callsign?,entryId?,distKm?}
+    this.kept = new Map();  // id -> {id,label} ticked towers (audible = most-recently ticked)
+    this.follow = null;    // {id,label,kind:'plane',callsign,entryId,distKm}
+    this._followAt = 0;
+    this._winner = null;
+
+    this.currentId = null;      // feed id currently playing
+    this.currentEntryId = null; // plane id whose feed is playing (null for a tower feed)
+
     this.audio = new Audio();
     this.audio.preload = 'none';
     this.audio.volume = 0.8;
 
     this.chip = document.getElementById('atc-chip');
     this.nameEl = document.getElementById('atc-name');
-    const vol = document.getElementById('atc-vol');
-    const stop = document.getElementById('atc-stop');
-    vol?.addEventListener('input', () => {
-      const v = parseFloat(vol.value);
-      this.audio.volume = v;
-      for (const a of this.listeners.values()) a.volume = v;
-    });
-    stop?.addEventListener('click', () => this.stop());
-
-    this.audio.addEventListener('playing', () => this._chip(true));
+    document.getElementById('atc-vol')?.addEventListener('input', (e) => { this.audio.volume = parseFloat(e.target.value); });
+    document.getElementById('atc-stop')?.addEventListener('click', () => this.stop());
+    this.audio.addEventListener('playing', () => { this._chip(true, false); clearTimeout(this._retryT); });
     this.audio.addEventListener('error', () => this._fail());
 
-    this.listeners = new Map(); // id -> Audio, persistent multi-tower listening
-    this._feedsCb = null;
+    // voice-activity graph (created lazily on first play; resumed on any user gesture)
+    this.ctx = null; this.srcNode = null; this.analyser = null; this._vbuf = null;
+    this._talking = false; this._hang = 0; this._onVoice = null;
+    this._muted = false;   // sticky Stop: suppresses playback (incl. auto-follow) until the user acts again
+    this._retryT = 0;
+    // Build the analysis graph ONLY inside a real user gesture. A MediaElementSource makes the
+    // (autoplay-suspended) AudioContext the element's ONLY output path — which is silent on a
+    // no-interaction kiosk. Until the first gesture the plain <audio> plays directly and VAD is
+    // simply off; after it, the running context enables the "on air" indicator.
+    document.addEventListener('pointerdown', () => { if (!this.ctx) this._initGraph(); this.ctx?.resume?.(); });
 
-    // load the verified feed list once
+    this._feedsCb = null;
     fetch('/api/atc').then((r) => r.json()).then((d) => {
       this.feeds = d.feeds || [];
+      for (const f of this.feeds) this._feedById.set(f.id, f);
       if (this._feedsCb) this._feedsCb(this.feeds);
     }).catch(() => {});
   }
 
-  // notify when the verified feed list is loaded (for tower markers + options)
   onFeeds(cb) { this._feedsCb = cb; if (this.feeds.length) cb(this.feeds); }
+  onVoice(cb) { this._onVoice = cb; }   // cb(entryId|null) when transmission starts/stops
 
-  // Tower hover: play a SPECIFIC facility on the shared hover channel (independent
-  // of the plane-hover toggle). Re-uses the same chip + audio element.
-  tuneFeed(feed) {
-    if (!feed || this.currentId === feed.id) return;
-    this.currentId = feed.id;
-    this.currentCall = '';
-    this._lastTuneAt = performance.now();
-    this.nameEl.textContent = feed.label;
-    this._chip(true, true);
-    this.audio.src = `/api/atc/${feed.id}`;
-    this.audio.play().catch(() => this._fail());
-  }
+  setEnabled(on) { this.enabled = on; if (!on) this.stop(); else { this._muted = false; this._resolve(); } }
 
-  // Persistent multi-tower listening (driven by the options checkboxes).
-  isListening(id) { return this.listeners.has(id); }
-  listen(feed) {
-    if (this.listeners.has(feed.id)) return;
-    const a = new Audio(`/api/atc/${feed.id}`);
-    a.volume = this.audio.volume;
-    a.play().catch(() => {});
-    this.listeners.set(feed.id, a);
-  }
-  unlisten(id) {
-    const a = this.listeners.get(id);
-    if (!a) return;
-    a.pause(); a.removeAttribute('src'); a.load();
-    this.listeners.delete(id);
-  }
+  // ---- intent setters (mutate a slot, then re-resolve) --------------------------
+  // Hovered TOWER: highest priority, transient.
+  tuneFeed(feed) { this._muted = false; this.manual = feed ? { id: feed.id, label: feed.label, kind: 'tower' } : null; this._resolve(); }
+  // Focused / hovered PLANE: follow its facility at manual priority.
+  tune(entry) { this._muted = false; this.manual = this._planeFeed(entry); this._resolve(); }
+  clearManual() { if (this.manual) { this.manual = null; this._resolve(); } }
 
-  setEnabled(on) {
-    this.enabled = on;
-    if (!on) this.stop();
-  }
+  // Persistent "kept" towers (the options-panel checkboxes). Now membership in a set,
+  // NOT a second audio element — only the most-recently ticked is ever audible.
+  isListening(id) { return this.kept.has(id); }
+  listen(feed) { this._muted = false; this.kept.set(feed.id, { id: feed.id, label: feed.label }); this._resolve(); }
+  unlisten(id) { if (this.kept.delete(id)) this._resolve(); }
 
-  // Tune the nearest verified facility to this aircraft (only re-tunes on change).
-  // Note: there is no free source for a *specific aircraft's* past transmissions,
-  // so when no facility is in range we say so honestly rather than fake audio.
-  // `entry.cur` is the plane's live ground position; `entry.state.callsign` (if
-  // known) is shown in the chip so it's clear which flight we're listening for.
-  tune(entry) {
-    const cur = entry?.cur;
-    if (!cur) return;
-    const callsign = (entry?.state?.callsign || '').trim();
-    this.tuneForAircraft(cur.lat, cur.lon, callsign);
-  }
-
-  // Auto-play the live ATC feed for the facility nearest a given aircraft position.
-  // Picks by great-circle distance to the *plane* (not the observer) — that's the
-  // facility most likely working it. Debounced so a churn of overhead planes can't
-  // thrash the stream, and it won't restart a feed that's already playing.
-  tuneForAircraft(lat, lon, callsign = '') {
-    if (!this.enabled || !this.feeds.length) return;
-    if (lat == null || lon == null) return;
-
-    let best = null, bestD = Infinity;
-    for (const f of this.feeds) {
-      const d = haversine(lat, lon, f.lat, f.lon);
-      if (d < bestD) { bestD = d; best = f; }
-    }
-
-    // Out of range of every verified facility: say so honestly (no faked audio).
-    if (!best || bestD > COVERAGE_KM) {
-      if (this.currentId !== '_none') {
-        this.currentId = '_none';
-        this.currentCall = '';
-        this.audio.pause();
-        this.nameEl.textContent = 'no ATC feed in range';
-        this._chip(true, false);
-      }
-      return;
-    }
-
-    // Already on this feed: just keep the callsign label fresh, don't restart.
-    if (best.id === this.currentId) {
-      if (callsign && callsign !== this.currentCall) {
-        this.currentCall = callsign;
-        this.nameEl.textContent = this._label(best, bestD, callsign);
-      }
-      return;
-    }
-
-    // Debounce: a different feed wants the channel. Only switch if the previous
-    // switch is older than RETUNE_MS, so transient overhead churn can't thrash it.
-    // We don't queue the candidate — our callers re-tune on a tick, so the next
-    // call past the window simply recomputes the (now stable) nearest facility.
+  // Auto hands-free: nearest facility to the zenith-most flight (lowest priority, debounced).
+  followOverhead(entry) {
+    const f = this._planeFeed(entry);
+    if (!f) { if (this.follow) { this.follow = null; this._resolve(); } return; }
+    if (this.follow && f.id === this.follow.id) { this.follow = f; if (this.currentId === f.id) this._refreshLabel(); return; }
     const now = performance.now();
-    if (this.currentId && this.currentId !== '_none' && now - this._lastTuneAt < RETUNE_MS) {
-      return;
-    }
-
-    this._switchTo(best, bestD, callsign);
+    if (this.follow && now - this._followAt < RETUNE_MS) return;  // debounce ONLY the follow slot
+    this.follow = f; this._followAt = now; this._resolve();
   }
 
-  _switchTo(feed, distKm, callsign) {
-    this.currentId = feed.id;
-    this.currentCall = callsign || '';
-    this._lastTuneAt = performance.now();
-    this.nameEl.textContent = this._label(feed, distKm, callsign);
-    this._chip(true, true); // show immediately in a "tuning…" state
-    this.audio.src = `/api/atc/${feed.id}`;
-    this.audio.play().catch(() => this._fail());
-  }
-
-  // Chip text: facility + how far it is from the plane, and the flight we're
-  // following so it's obvious whose ATC this is (e.g. "KLAX Tower · 12 km · UAL1").
-  _label(feed, distKm, callsign) {
-    const base = `${feed.label} · ${Math.round(distKm)} km`;
-    return callsign ? `${base} · ${callsign}` : base;
+  // Back-compat: tune the facility nearest a raw position (kept for any external callers).
+  tuneForAircraft(lat, lon, callsign = '') {
+    const n = this._nearestFeed(lat, lon);
+    this.follow = n ? { id: n.feed.id, label: n.feed.label, kind: 'plane', callsign, entryId: null, distKm: n.distKm } : null;
+    this._resolve();
   }
 
   stop() {
+    this._muted = true; clearTimeout(this._retryT);   // sticky: auto-follow won't silently undo Stop
+    this.manual = null; this.follow = null; this._winner = null;
     this.audio.pause();
-    this.audio.removeAttribute('src');
-    this.audio.load();
-    this.currentId = null;
-    this.currentCall = '';
+    this.currentId = null; this.currentEntryId = null;
+    this._setTalking(false);
     this._chip(false);
+  }
+
+  // ---- resolver: the ONLY place that sets audio.src / play / pause ---------------
+  _resolve() {
+    if (!this.enabled || this._muted) { this.audio.pause(); this.currentId = null; this._setTalking(false); return; }
+
+    let win = this.manual;
+    if (!win && this.kept.size) win = { ...[...this.kept.values()].pop(), kind: 'tower' };
+    if (!win) win = this.follow;
+
+    if (!win) {   // nothing to play — be honest if we had a live channel, else hide the chip
+      this._winner = null; this.currentEntryId = null;
+      if (this.currentId && this.currentId !== '_none') { this.audio.pause(); this.currentId = '_none'; }
+      if (this.currentId === '_none') { this.nameEl.textContent = 'no ATC feed in range'; this._chip(true, false); }
+      this._setTalking(false);
+      return;
+    }
+
+    this._winner = win;
+    this.currentEntryId = win.kind === 'plane' ? win.entryId : null;
+    if (win.id === this.currentId) { this._refreshLabel(); return; }  // already playing it
+
+    this.currentId = win.id;
+    this._refreshLabel();
+    this._chip(true, true);                 // show immediately in a "tuning…" state
+    this.audio.src = `/api/atc/${win.id}`;
+    this.audio.play().catch(() => this._fail());
+    this.ctx?.resume?.();
+  }
+
+  _refreshLabel() {
+    const w = this._winner; if (!w || !this.nameEl) return;
+    let t = w.label;
+    if (w.kind === 'plane') { if (w.distKm != null) t += ` · ${Math.round(w.distKm)} km`; if (w.callsign) t += ` · ${w.callsign}`; }
+    this.nameEl.textContent = t;
+  }
+
+  // ---- feed lookup --------------------------------------------------------------
+  _planeFeed(entry) {
+    const cur = entry?.cur || entry?.render;
+    if (!cur) return null;
+    const n = this._nearestFeed(cur.lat, cur.lon);
+    if (!n) return null;
+    return { id: n.feed.id, label: n.feed.label, kind: 'plane', callsign: (entry?.state?.callsign || '').trim(), entryId: entry.id, distKm: n.distKm };
+  }
+  _nearestFeed(lat, lon) {
+    if (lat == null || lon == null || !this.feeds.length) return null;
+    let best = null, bestD = Infinity;
+    for (const f of this.feeds) { const d = haversine(lat, lon, f.lat, f.lon); if (d < bestD) { bestD = d; best = f; } }
+    if (!best || bestD > COVERAGE_KM) return null;
+    return { feed: best, distKm: bestD };
+  }
+
+  // ---- voice-activity detection (single stream, same-origin, so not CORS-tainted) --
+  _initGraph() {
+    if (this.ctx) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try {
+      this.ctx = new AC();
+      this.srcNode = this.ctx.createMediaElementSource(this.audio);
+      this.analyser = this.ctx.createAnalyser();
+      this.analyser.fftSize = 512; this.analyser.smoothingTimeConstant = 0.5;
+      this.srcNode.connect(this.analyser);
+      this.analyser.connect(this.ctx.destination);   // MUST route to destination or audio goes silent
+      this._vbuf = new Float32Array(this.analyser.fftSize);
+    } catch { this.ctx = null; }   // once created, a MediaElementSource sticks to this element
+  }
+
+  // Call each animation frame. Returns true while the channel has voice on it.
+  sampleVoice() {
+    if (!this.analyser || this.audio.paused || !this.currentId || this.currentId === '_none') { this._setTalking(false); return false; }
+    this.analyser.getFloatTimeDomainData(this._vbuf);
+    let sum = 0;
+    for (let i = 0; i < this._vbuf.length; i++) { const v = this._vbuf[i]; sum += v * v; }
+    const rms = Math.sqrt(sum / this._vbuf.length);
+    if (rms > VAD_RMS) this._hang = VAD_HANG; else if (this._hang > 0) this._hang--;
+    this._setTalking(this._hang > 0);
+    return this._talking;
+  }
+
+  _setTalking(on) {
+    if (on === this._talking) return;
+    this._talking = on;
+    this.chip?.classList.toggle('talking', on);
+    if (this._onVoice) this._onVoice(on ? this.currentEntryId : null);
   }
 
   _chip(show, tuning = false) {
@@ -176,8 +202,14 @@ export class AtcAudio {
 
   _fail() {
     if (!this.currentId || this.currentId === '_none') return;
-    this.nameEl.textContent = 'feed offline';
-    this.chip.classList.remove('tuning');
+    if (this.nameEl) this.nameEl.textContent = 'feed offline';
+    this.chip?.classList.remove('tuning');
+    // Clear the id so the resolver doesn't treat the dead stream as "already playing" (a media
+    // error is terminal for the src); retry shortly so a transient upstream 5xx self-heals.
+    this.currentId = null; this.currentEntryId = null;
+    this._setTalking(false);
+    clearTimeout(this._retryT);
+    this._retryT = setTimeout(() => this._resolve(), 5000);
   }
 }
 

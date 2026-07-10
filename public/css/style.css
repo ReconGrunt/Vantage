@@ -1,257 +1,423 @@
+/* style.css — unified "C2-class" command UI for the dome / projector views.
+   One design system shared with radar.css: near-black canvas, 1px hairline chrome,
+   neo-grotesque labels + monospace data, sharp corners, and TWO restrained accents:
+     · teal  (--live)   = live / enabled / system-nominal   (dominant, calm)
+     · amber (--accent) = selection / attention / alert      (rare, so it pops)
+   No glassy bubbles, no glow on chrome, no classification theatre — this is a real
+   situational-awareness tool, not a sim. Functional layout/positioning is unchanged;
+   only the visual treatment is retuned. radar.css consumes these same :root tokens. */
+
+/* Bundled UI faces (SIL OFL 1.1) — self-hosted so the tactical look is identical on any
+   projector/kiosk with NO network/CDN dependency. Files + licenses live in public/fonts/.
+   The --sans/--mono stacks below keep system fallbacks as a safety net. */
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/inter-400.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 500; font-display: swap; src: url('../fonts/inter-500.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 600; font-display: swap; src: url('../fonts/inter-600.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 700; font-display: swap; src: url('../fonts/inter-700.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/ibm-plex-mono-400.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url('../fonts/ibm-plex-mono-500.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Mono'; font-style: normal; font-weight: 600; font-display: swap; src: url('../fonts/ibm-plex-mono-600.woff2') format('woff2'); }
+
 :root {
-  --bg: #05070f;
-  --panel: rgba(13, 20, 33, 0.82);
-  --panel-border: rgba(90, 130, 180, 0.25);
-  --text: #cfe0f0;
-  --muted: #7e93ab;
-  --accent: #6fd3ff;
+  /* surfaces */
+  --bg: #08090b;
+  --bg-2: #0a0c0f;
+  --panel: rgba(15, 18, 22, 0.92);
+  --panel-2: rgba(22, 26, 31, 0.94);
+  --raise: rgba(255, 255, 255, 0.035);
+  --raise-hi: rgba(255, 255, 255, 0.06);
+
+  /* hairlines */
+  --line: #1b2229;
+  --line-2: #2a343d;
+
+  /* type */
+  --text: #e6ebef;
+  --muted: #8a97a3;
+  --mute-2: #5c6874;
+
+  /* accents */
+  --accent: #e8552a;   /* selection / attention / alert */
+  --live: #24d3c9;     /* live / enabled / system-nominal */
+  --warn: #ffb020;
+  --bad: #ff3b47;
+
+  /* affiliation (MIL-STD-2525-flavoured service colours, shared with radar tracks) */
+  --mil: #3fcf6a;
+  --law: #36c6e0;
+  --ems: #ffb020;
+  --civ: #c6d4e0;
+
+  --mono: 'IBM Plex Mono', 'Roboto Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
 }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); }
-body { font-family: Inter, system-ui, Arial, sans-serif; color: var(--text); }
+body {
+  font-family: var(--sans); color: var(--text);
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+}
 
 #view { display: block; width: 100vw; height: 100vh; }
 
+/* ---- command panel (dome / projector controls) --------------------------------- */
 #panel {
-  position: fixed; top: 16px; left: 16px; width: 300px;
-  max-height: calc(100vh - 32px); overflow-y: auto; overflow-x: hidden;
-  background: var(--panel); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-  border: 1px solid var(--panel-border); border-radius: 14px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-  transition: width .2s;
-  scrollbar-width: thin; scrollbar-color: rgba(120,150,190,0.4) transparent;
+  position: fixed; top: 14px; left: 14px; width: 306px;
+  max-height: calc(100vh - 28px); overflow-y: auto; overflow-x: hidden;
+  background: var(--panel); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  border: 1px solid var(--line); border-radius: 3px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+  transition: width .18s;
+  scrollbar-width: thin; scrollbar-color: rgba(120, 150, 170, 0.35) transparent;
 }
 #panel::-webkit-scrollbar { width: 8px; }
-#panel::-webkit-scrollbar-thumb { background: rgba(120,150,190,0.4); border-radius: 4px; }
+#panel::-webkit-scrollbar-thumb { background: rgba(120, 150, 170, 0.35); border-radius: 4px; }
+
 .panel-head {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 14px; border-bottom: 1px solid var(--panel-border);
+  padding: 11px 13px; border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 2;
+  background: linear-gradient(180deg, rgba(12, 15, 19, 0.96), rgba(12, 15, 19, 0.9));
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
 }
-.panel-head h1 { font-size: 15px; margin: 0; letter-spacing: .5px; font-weight: 600; }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+/* small reticle mark */
+.brand-mark {
+  width: 15px; height: 15px; flex: none; position: relative;
+  border: 1.5px solid var(--live); border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+.brand-mark::after {
+  content: ''; position: absolute; inset: 3px; background: var(--live);
+  border-radius: 1px; opacity: 0.85;
+}
+.brand-txt { display: flex; flex-direction: column; line-height: 1; min-width: 0; }
+.panel-head h1 {
+  font-size: 14px; margin: 0; font-weight: 650; letter-spacing: 1.4px;
+  color: var(--text); font-family: var(--sans);
+}
+.brand-sub {
+  font-family: var(--mono); font-size: 8.5px; letter-spacing: 1.4px;
+  color: var(--mute-2); text-transform: uppercase; margin-top: 3px;
+}
 #collapse {
-  background: none; border: none; color: var(--muted); cursor: pointer;
-  font-size: 14px; padding: 2px 6px;
+  background: var(--raise); border: 1px solid var(--line); color: var(--muted);
+  cursor: pointer; font-size: 11px; padding: 4px 7px; border-radius: 2px; flex: none;
+  line-height: 1; transition: border-color .15s, color .15s;
 }
-.panel-body { padding: 12px 14px 14px; }
+#collapse:hover { border-color: var(--line-2); color: var(--text); }
+
+.panel-body { padding: 12px 13px 14px; }
 body.panel-collapsed .panel-body { display: none; }
-body.panel-collapsed #panel { width: 180px; }
+body.panel-collapsed #panel { width: 200px; }
 
 .status-row {
   display: flex; justify-content: space-between; align-items: center;
-  font-size: 11px; color: var(--muted); margin-bottom: 12px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em;
+  color: var(--muted); margin-bottom: 13px; text-transform: uppercase;
 }
-#status { color: var(--accent); }
-.clock { font-variant-numeric: tabular-nums; font-size: 10px; }
+#status { color: var(--live); display: inline-flex; align-items: center; gap: 6px; }
+#status::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--live);
+  box-shadow: 0 0 6px var(--live); animation: livepulse 2.4s ease-in-out infinite;
+}
+@keyframes livepulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.clock { font-variant-numeric: tabular-nums; font-size: 10px; color: var(--mute-2); }
 
-section { margin-bottom: 14px; }
+/* section + micro-label header */
+section { margin-bottom: 15px; }
 h2 {
-  font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
-  color: var(--muted); margin: 0 0 8px; font-weight: 600;
+  font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em;
+  color: var(--muted); margin: 0 0 9px; font-weight: 600;
+  padding-bottom: 6px; border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
 }
 
 .row {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 0; font-size: 13px; cursor: pointer;
+  display: flex; align-items: center; gap: 9px;
+  padding: 5px 0; font-size: 13px; cursor: pointer; color: var(--text);
 }
-.row input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; }
+.row input[type="checkbox"] { accent-color: var(--live); width: 15px; height: 15px; flex: none; }
 .row .count {
-  margin-left: auto; font-size: 11px; color: var(--muted);
-  background: rgba(255, 255, 255, 0.06); padding: 1px 8px; border-radius: 10px;
-  font-variant-numeric: tabular-nums;
+  margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--muted);
+  background: var(--raise); border: 1px solid var(--line);
+  padding: 1px 7px; border-radius: 2px; letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums; text-transform: uppercase;
 }
-.row.sub { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; cursor: default; }
+.row.sub {
+  display: block; font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em;
+  color: var(--mute-2); text-transform: uppercase; margin-top: 8px; cursor: default;
+}
 
 select, input {
-  background: rgba(255, 255, 255, 0.06); border: 1px solid var(--panel-border);
-  color: var(--text); border-radius: 8px; padding: 6px 8px; font-size: 12px;
-  width: 100%; margin-top: 4px;
+  background: var(--raise); border: 1px solid var(--line);
+  color: var(--text); border-radius: 2px; padding: 7px 8px; font-size: 12px;
+  width: 100%; margin-top: 5px; font-family: var(--sans);
+  transition: border-color .15s;
 }
+select:focus, input:focus { outline: none; border-color: var(--live); }
 select { cursor: pointer; }
+/* Native dropdown popup: <option>s need a SOLID dark background + light text, or they render
+   (near-)white-on-white in the OS list. The closed control uses the translucent --raise above;
+   the open list can't use a semi-transparent colour, so use a solid theme dark here. */
+select option, select optgroup { background: #0e1216; color: var(--text); }
+select option:checked { background: #17303a; color: #fff; }
+input[type="number"] { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
 .loc-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
-.loc-grid label { font-size: 10px; color: var(--muted); }
-.btn-row { display: flex; gap: 8px; margin-top: 8px; }
+.loc-grid label { font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em; color: var(--mute-2); text-transform: uppercase; }
+.btn-row { display: flex; gap: 6px; margin-top: 9px; }
+
 button {
-  background: rgba(111, 211, 255, 0.15); border: 1px solid rgba(111, 211, 255, 0.35);
-  color: var(--accent); border-radius: 8px; padding: 7px 12px; font-size: 12px;
-  cursor: pointer; flex: 1; transition: background .15s;
+  background: var(--raise); border: 1px solid var(--line);
+  color: var(--muted); border-radius: 2px; padding: 7px 12px; font-size: 11px;
+  cursor: pointer; flex: 1; font-family: var(--sans); letter-spacing: 0.04em;
+  transition: border-color .15s, color .15s, background .15s;
 }
-button:hover { background: rgba(111, 211, 255, 0.28); }
+button:hover { background: var(--raise-hi); border-color: var(--line-2); color: var(--text); }
+button:active { background: rgba(36, 211, 201, 0.12); }
 
-.hint { font-size: 10px; color: var(--muted); line-height: 1.5; margin: 8px 0 0; }
+.hint {
+  font-family: var(--mono); font-size: 9.5px; color: var(--mute-2); line-height: 1.6;
+  margin: 8px 0 0; letter-spacing: 0.02em;
+}
+.hint b { color: var(--muted); font-weight: 600; }
 
+/* ---- focused-object info card (dome) ------------------------------------------- */
 #info {
   position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(20px);
-  background: var(--panel); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-  border: 1px solid var(--panel-border); border-radius: 14px;
-  padding: 16px 24px; min-width: 300px; max-width: 460px;
+  z-index: 40;
+  background: var(--panel-2); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  border: 1px solid var(--line-2); border-radius: 3px;
+  padding: 15px 22px 16px; min-width: 320px; max-width: 470px;
   opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s;
-  font-size: 17px;
+  font-family: var(--mono); font-size: 13px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6);
 }
 #info.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-#info .info-name { font-size: 24px; font-weight: 700; color: #fff; letter-spacing: .3px; }
-#info .info-type { font-size: 15px; color: var(--muted); margin-bottom: 10px; }
+/* when a focused-object card is up, lift the overhead manifest clear so they never overlap
+   (default layout only — the dashboard's inline rect overrides this when a widget is arranged) */
+#info.show ~ #flightboard { bottom: 190px; max-height: calc(100vh - 198px); }
+/* attention corner ticks (top-left + bottom-right) mark the selected object */
+#info::before, #info::after {
+  content: ''; position: absolute; width: 12px; height: 12px; pointer-events: none;
+  border: 1.5px solid var(--accent);
+}
+#info::before { top: -1px; left: -1px; border-right: none; border-bottom: none; }
+#info::after { bottom: -1px; right: -1px; border-left: none; border-top: none; }
+#info .info-name {
+  font-family: var(--sans); font-size: 22px; font-weight: 700; color: #fff;
+  letter-spacing: 0.4px;
+}
+#info .info-type { font-size: 12px; color: var(--muted); margin-bottom: 11px; letter-spacing: 0.04em; }
 #info div { display: flex; gap: 12px; padding: 2px 0; }
-#info div span { color: var(--muted); min-width: 104px; }
+#info div span {
+  color: var(--mute-2); min-width: 108px; text-transform: uppercase;
+  font-size: 10px; letter-spacing: 0.08em; padding-top: 1px;
+}
 #info .info-path {
   display: flex; justify-content: space-between; gap: 16px;
-  margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--panel-border);
-  font-size: 15px; font-weight: 600;
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line);
+  font-size: 13px; font-weight: 600;
 }
-#info .info-path span { min-width: 0; }
+#info .info-path span { min-width: 0; text-transform: none; letter-spacing: 0; font-size: 12px; }
 
-/* Round "skylight" vignette for the flat-ceiling (perspective) projection.
-   No z-index: it sits right after the canvas in the DOM so it paints over the
-   sky but under every UI panel (which come later). The circle is sized to the
-   inscribed viewport circle (closest-side), so its soft black ring frames the
-   overhead cone and fades the heavily-stretched near-horizon corners to true
-   black — i.e. unlit on a projector, like the rim of a real round skylight. */
+/* ---- round "skylight" vignette (flat-ceiling perspective) ---------------------- */
 #ceiling-mask {
   position: fixed; inset: 0; display: none; pointer-events: none;
   background: radial-gradient(circle closest-side at center,
-    transparent 0 80%, rgba(0,0,0,0.55) 90%, #000 100%);
+    transparent 0 80%, rgba(0, 0, 0, 0.55) 90%, #000 100%);
 }
 body.ceiling-on #ceiling-mask { display: block; }
 
-/* Paint-to-reveal ceiling mask (js/ceiling-brush.js). A full-screen 2D canvas that
-   sits over the WebGL view: opaque-black pixels black out the projection, transparent
-   pixels reveal the sky. Shown only when "Custom ceiling shape" is enabled in a
-   projector mode; it then REPLACES the fixed round skylight vignette. pointer-events
-   stays off (so view rotation/hover pass through the revealed sky) until the user
-   enters Paint mode, when it captures the mouse to brush. */
+/* ---- paint-to-reveal ceiling mask ---------------------------------------------- */
 #ceiling-brush { position: fixed; inset: 0; display: none; pointer-events: none; }
 body.custom-ceiling #ceiling-brush { display: block; }
 body.custom-ceiling #ceiling-mask { display: none !important; }
 body.brush-paint #ceiling-brush { pointer-events: auto; cursor: none; }
-
-/* Brush-size ring that follows the cursor while painting. */
 #brush-cursor {
   position: fixed; left: 0; top: 0; width: 120px; height: 120px;
   margin: 0; border-radius: 50%; transform: translate(-50%, -50%);
-  border: 1.5px solid rgba(111, 211, 255, 0.9);
+  border: 1.5px solid var(--live);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(0, 0, 0, 0.45);
   pointer-events: none; display: none; z-index: 40;
 }
 body.brush-paint #brush-cursor { display: block; }
 
-/* Reveal/Hide brush-mode buttons share the .unit-btn look; lit when selected. */
-.cs-mode.active { background: rgba(111, 211, 255, 0.32); border-color: var(--accent); color: #fff; }
-#ceilshape summary { font-size: 12px; color: var(--accent); cursor: pointer; padding: 4px 0; }
+/* segmented sub-controls (unit / reveal-hide / basemap-style rows) */
+.cs-mode.active { background: rgba(36, 211, 201, 0.16); border-color: var(--live); color: var(--text); }
+#ceilshape summary, #calib summary {
+  cursor: pointer; font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--live); padding: 6px 0;
+  -webkit-user-select: none; user-select: none;
+}
+#calib { margin: 4px 0 2px; }
+#ceilshape { margin: 4px 0 2px; }
 
-/* ISS pass alert */
+/* ---- ISS pass alert (top centre) ------------------------------------------------ */
 #iss-alert {
   position: fixed; top: 14px; left: 50%; transform: translateX(-50%) translateY(-12px);
   z-index: 25; display: none; opacity: 0; transition: opacity .25s, transform .25s;
-  padding: 8px 18px; border-radius: 999px;
-  background: rgba(8, 24, 16, 0.86); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
-  border: 1px solid rgba(124, 255, 178, 0.45);
-  color: #aeffd0; font-size: 13px; font-weight: 600; letter-spacing: .3px;
-  box-shadow: 0 6px 26px rgba(0, 0, 0, 0.5), 0 0 18px rgba(124, 255, 178, 0.18);
+  padding: 8px 16px; border-radius: 3px;
+  background: var(--panel-2); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  border: 1px solid var(--line-2);
+  color: var(--live); font-family: var(--mono); font-size: 12px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   white-space: nowrap; font-variant-numeric: tabular-nums;
 }
 #iss-alert.show { display: block; opacity: 1; transform: translateX(-50%) translateY(0); }
-#iss-alert.now { border-color: #7CFFB2; color: #d6ffe8; animation: isspulse 1.6s ease-in-out infinite; }
-#iss-alert .iss-sub { color: #6fb894; font-weight: 500; }
-@keyframes isspulse { 0%, 100% { box-shadow: 0 6px 26px rgba(0,0,0,.5), 0 0 14px rgba(124,255,178,.18); } 50% { box-shadow: 0 6px 26px rgba(0,0,0,.5), 0 0 28px rgba(124,255,178,.5); } }
+#iss-alert.now { border-color: var(--accent); color: #ffd8c8; animation: isspulse 1.6s ease-in-out infinite; }
+#iss-alert .iss-sub { color: var(--mute-2); font-weight: 500; }
+@keyframes isspulse {
+  0%, 100% { box-shadow: 0 10px 30px rgba(0, 0, 0, .5), 0 0 0 1px rgba(232, 85, 42, .0); }
+  50% { box-shadow: 0 10px 30px rgba(0, 0, 0, .5), 0 0 14px rgba(232, 85, 42, .45); }
+}
 
-/* terminal split-flap arrivals board */
+/* ---- overhead manifest (was: amber split-flap board) --------------------------- */
+/* Retuned into the command palette: a mono manifest of what's overhead / inbound —
+   neutral text with service-colour tints, one teal "NOW", no CRT glow. */
 #flightboard {
-  position: fixed; left: 332px; right: 160px; bottom: 0;
-  max-width: 560px;
-  background: linear-gradient(180deg, #0a0802, #0d0a02);
-  border: 1px solid rgba(255, 176, 0, 0.35); border-bottom: none;
-  border-top-left-radius: 10px; border-top-right-radius: 10px;
-  box-shadow: 0 0 30px rgba(0, 0, 0, 0.6);
+  position: fixed; left: 334px; right: 160px; bottom: 0;
+  max-width: 600px; max-height: calc(100vh - 8px); overflow-x: hidden; overflow-y: auto;
+  background: var(--panel); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  border: 1px solid var(--line); border-bottom: none;
+  border-top-left-radius: 3px; border-top-right-radius: 3px;
+  box-shadow: 0 -6px 30px rgba(0, 0, 0, 0.5);
   padding: 9px 14px 11px; z-index: 30;
-  font-family: 'Consolas', 'Cascadia Mono', 'DejaVu Sans Mono', 'Courier New', monospace;
-  color: #ffc233; text-shadow: 0 0 1px rgba(255, 180, 60, 0.35);
-  letter-spacing: 0.3px;
-  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
-  text-rendering: geometricPrecision;
+  font-family: var(--mono);
+  color: var(--text); letter-spacing: 0.2px;
 }
 .fb-titlebar {
   display: flex; justify-content: space-between; align-items: baseline;
-  font-size: 11px; color: #ffcf66; border-bottom: 1px solid rgba(255, 176, 0, 0.25);
-  padding-bottom: 4px; margin-bottom: 4px;
+  font-size: 10px; color: var(--muted); border-bottom: 1px solid var(--line);
+  padding-bottom: 5px; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.12em;
 }
-.fb-brand { font-weight: 700; letter-spacing: 1px; }
-.fb-clock { font-variant-numeric: tabular-nums; color: #ffb000; }
+.fb-brand { font-weight: 700; color: var(--text); letter-spacing: 0.16em; }
+.fb-clock { font-variant-numeric: tabular-nums; color: var(--live); }
 .fb-sectlabel {
-  font-size: 10px; color: #d18f10; letter-spacing: 2px; margin: 7px 0 2px;
+  font-size: 9px; color: var(--mute-2); letter-spacing: 0.2em; margin: 8px 0 3px;
+  text-transform: uppercase;
 }
 .fb-colhead, .fb-row {
-  display: grid; grid-template-columns: 72px 50px 78px 56px 40px 52px 1fr;
-  gap: 5px; font-size: 13px; line-height: 1.55; white-space: nowrap;
+  display: grid; grid-template-columns: 64px 48px 62px 58px 34px 56px minmax(120px, 1fr);
+  gap: 5px; font-size: 12px; line-height: 1.6; white-space: nowrap;
 }
-.fb-colhead { font-size: 10px; color: #a06f10; letter-spacing: 1px; }
-.fb-row span { overflow: hidden; text-overflow: clip; }
-.fb-row .fb-flight { font-weight: 700; }
-.fb-dist { color: #d39a3a; }
-.fb-status { font-weight: 700; }
-.fb-now { color: #6fff99; text-shadow: 0 0 2px rgba(60, 255, 130, 0.5); animation: fbblink 1.4s steps(2, end) infinite; }
-.fb-soon { color: #ffda5e; }
-.fb-closest { background: rgba(255, 176, 0, 0.10); border-left: 2px solid #5dff8b; }
-.fb-closest .fb-status { color: #6fff99; }
-.fb-empty { font-size: 12px; color: #946400; padding: 2px 0; }
-.fb-sectlabel.fb-sat { color: #7CFFB2; }
-.fb-satrow .fb-flight { color: #a9ffd2; text-shadow: 0 0 1.5px rgba(124, 255, 178, 0.45); }
-/* category tints on the flight code */
-.fb-row.fb-law .fb-flight { color: #7db4ff; text-shadow: 0 0 1.5px rgba(80,140,255,.5); }
-.fb-row.fb-mil .fb-flight { color: #6ef5ac; text-shadow: 0 0 1.5px rgba(90,240,160,.5); }
-.fb-row.fb-ems .fb-flight { color: #ff8f8f; text-shadow: 0 0 1.5px rgba(255,100,100,.5); }
+.fb-colhead { font-size: 9px; color: var(--mute-2); letter-spacing: 0.12em; text-transform: uppercase; }
+.fb-row span { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.fb-row .fb-flight { font-weight: 700; color: var(--text); }
+.fb-dist { color: var(--muted); }
+.fb-status { font-weight: 600; color: var(--muted); }
+.fb-now { color: var(--live); }
+.fb-soon { color: var(--warn); }
+.fb-closest { background: rgba(232, 85, 42, 0.08); border-left: 2px solid var(--accent); padding-left: 4px; }
+.fb-closest .fb-status { color: #ffd8c8; }
+.fb-empty { font-size: 11px; color: var(--mute-2); padding: 2px 0; }
+.fb-sectlabel.fb-sat { color: var(--mute-2); }
+.fb-satrow .fb-flight { color: var(--law); }
+/* service tints on the flight code */
+.fb-row.fb-law .fb-flight { color: var(--law); }
+.fb-row.fb-mil .fb-flight { color: var(--mil); }
+.fb-row.fb-ems .fb-flight { color: var(--ems); }
 @keyframes fbblink { 0%, 60% { opacity: 1; } 61%, 100% { opacity: 0.45; } }
-body.kiosk #flightboard { left: 16px; }   /* panel hidden in kiosk, reclaim the space */
+body.kiosk #flightboard { left: 16px; }
 
-/* Live ATC "now tuned" chip */
+/* ---- ATC "now tuned" chip ------------------------------------------------------- */
 #atc-chip {
   position: fixed; right: 16px; bottom: 150px; z-index: 31;
   display: flex; align-items: center; gap: 8px;
-  padding: 6px 10px; border-radius: 8px;
-  background: rgba(8, 12, 20, 0.92); border: 1px solid rgba(110, 180, 255, 0.4);
-  box-shadow: 0 0 18px rgba(0, 0, 0, 0.5);
-  font-family: 'Consolas', 'Cascadia Mono', monospace; font-size: 12px;
-  color: #bfe0ff; letter-spacing: 0.3px;
-  -webkit-font-smoothing: antialiased;
+  padding: 6px 10px; border-radius: 3px;
+  background: var(--panel-2); border: 1px solid var(--line-2);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;
+  color: var(--text); text-transform: uppercase;
 }
 #atc-chip[hidden] { display: none; }
 #atc-chip .atc-dot {
-  width: 9px; height: 9px; border-radius: 50%; background: #59ff9d;
-  box-shadow: 0 0 8px rgba(89, 255, 157, 0.9); flex: none;
+  width: 8px; height: 8px; border-radius: 50%; background: var(--live);
+  box-shadow: 0 0 7px var(--live); flex: none;
 }
-#atc-chip.tuning .atc-dot { background: #ffd24a; box-shadow: 0 0 8px rgba(255, 210, 74, .9); animation: atcpulse 0.9s ease-in-out infinite; }
+#atc-chip.tuning .atc-dot { background: var(--warn); box-shadow: 0 0 7px var(--warn); animation: atcpulse 0.9s ease-in-out infinite; }
 #atc-name { font-weight: 600; white-space: nowrap; }
-#atc-vol { width: 64px; accent-color: #6eb4ff; }
+#atc-vol { width: 64px; accent-color: var(--live); margin: 0; }
 #atc-stop {
-  background: none; border: 1px solid rgba(110, 180, 255, 0.4); color: #bfe0ff;
-  border-radius: 4px; cursor: pointer; font-size: 10px; line-height: 1; padding: 4px 6px;
+  background: var(--raise); border: 1px solid var(--line); color: var(--muted);
+  border-radius: 2px; cursor: pointer; font-size: 10px; line-height: 1; padding: 4px 6px; flex: none;
 }
-#atc-stop:hover { background: rgba(110, 180, 255, 0.15); }
+#atc-stop:hover { background: var(--raise-hi); border-color: var(--line-2); color: var(--text); }
 @keyframes atcpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+/* "on air" — the tuned ATC channel currently has voice on it (teal, distinct from amber tuning) */
+#atc-chip.talking { border-color: var(--live); }
+#atc-chip.talking .atc-dot { background: var(--live); box-shadow: 0 0 10px var(--live); animation: atcpulse 0.5s ease-in-out infinite; }
+#atc-chip.talking #atc-name::after { content: ' · ◉ ON AIR'; color: var(--live); font-weight: 700; letter-spacing: 0.06em; }
 
-/* ATC towers options list */
-.tower-list { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
-.tower-row { display: flex; align-items: center; gap: 7px; font-size: 12px; cursor: pointer; }
-.tower-row input { accent-color: #6eb4ff; flex: none; }
+/* ---- distress / emergency box (aircraft squawking 7500 / 7600 / 7700 in range) --- */
+/* Shown in EVERY view (not hidden by body.radar-on); auto-hides when nothing is squawking. */
+#distress {
+  position: fixed; top: 46px; left: 50%; transform: translateX(-50%); width: 320px; z-index: 34;
+  pointer-events: none;   /* informational alert — never intercept clicks on the panel beneath */
+  background: var(--panel-2); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  border: 1px solid var(--bad); border-radius: 3px; overflow: hidden;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.6); animation: distresspulse 1.6s ease-in-out infinite;
+  font-family: var(--mono);
+}
+#distress[hidden] { display: none; }
+.distress-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 7px 12px; border-bottom: 1px solid var(--line);
+  font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--bad); font-weight: 700;
+}
+#distress-count { color: var(--muted); font-weight: 500; letter-spacing: 0.06em; }
+#distress-list { display: flex; flex-direction: column; max-height: 40vh; overflow-y: auto; }
+.distress-row {
+  display: grid; grid-template-columns: 9px 1fr auto; gap: 9px; align-items: center;
+  padding: 7px 12px; border-bottom: 1px solid rgba(27, 34, 41, 0.6);
+}
+.distress-row:last-child { border-bottom: none; }
+.distress-sev { width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 7px currentColor; }
+.distress-main { min-width: 0; }
+.distress-call { font-weight: 700; color: var(--text); font-size: 13px; }
+.distress-reason { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.distress-right { text-align: right; }
+.distress-code { font-weight: 700; font-size: 12px; }
+.distress-meta { font-size: 9.5px; color: var(--mute-2); font-variant-numeric: tabular-nums; }
+@keyframes distresspulse {
+  0%, 100% { box-shadow: 0 12px 34px rgba(0, 0, 0, .6), 0 0 8px rgba(255, 59, 71, .18); }
+  50% { box-shadow: 0 12px 34px rgba(0, 0, 0, .6), 0 0 28px rgba(255, 59, 71, .55); }
+}
 
-/* keep the WebXR buttons clear of the board */
+/* ---- air-incident log (settings section) --------------------------------------- */
+.incident-list { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; max-height: 168px; overflow-y: auto; }
+.incident-row {
+  display: grid; grid-template-columns: auto auto 1fr; gap: 8px; align-items: baseline;
+  font-size: 11px; padding: 3px 0; border-bottom: 1px solid rgba(27, 34, 41, 0.5);
+}
+.incident-time { font-variant-numeric: tabular-nums; color: var(--mute-2); font-size: 10px; }
+.incident-call { color: var(--text); font-weight: 600; }
+.incident-code { text-align: right; font-weight: 700; font-size: 10px; letter-spacing: 0.04em; }
+
+/* ATC towers list */
+.tower-list { display: flex; flex-direction: column; gap: 5px; margin-top: 5px; }
+.tower-row { display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; color: var(--text); }
+.tower-row input { accent-color: var(--live); flex: none; width: 14px; height: 14px; }
+
 #VRButton, #ARButton { bottom: 16px !important; }
 
-/* compass rose */
+/* ---- compass rose --------------------------------------------------------------- */
 #compass {
   position: fixed; right: 18px; bottom: 14px; width: 168px; height: 202px;
   z-index: 20; -webkit-user-select: none; user-select: none; touch-action: none;
 }
 #compass::before {
   content: ''; position: absolute; top: 0; left: 0; width: 168px; height: 168px;
-  border-radius: 50%; background: rgba(10, 16, 26, 0.6);
+  border-radius: 50%; background: rgba(10, 13, 17, 0.62);
   -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
-  border: 1px solid transparent;
+  border: 1px solid var(--line);
 }
 #compass.editable::before {
-  /* make it obvious the dial is grabbable while projecting */
-  border-color: rgba(120, 180, 255, 0.55);
-  box-shadow: 0 0 14px rgba(80, 150, 255, 0.35), inset 0 0 14px rgba(80, 150, 255, 0.12);
+  border-color: rgba(36, 211, 201, 0.5);
+  box-shadow: 0 0 14px rgba(36, 211, 201, 0.25), inset 0 0 14px rgba(36, 211, 201, 0.08);
 }
 #compass-ring { position: absolute; top: 0; left: 0; width: 168px; height: 168px; transition: transform .08s linear; }
 #compass.editable { cursor: grab; }
@@ -259,15 +425,16 @@ body.kiosk #flightboard { left: 16px; }   /* panel hidden in kiosk, reclaim the 
 #compass-needle {
   position: absolute; top: -3px; left: 84px; transform: translateX(-50%);
   width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent;
-  border-bottom: 15px solid var(--accent); filter: drop-shadow(0 0 3px var(--accent));
+  border-bottom: 15px solid var(--accent); filter: drop-shadow(0 0 3px rgba(232, 85, 42, 0.6));
 }
 #compass-read {
   position: absolute; bottom: 10px; left: 0; width: 168px; text-align: center;
-  font-size: 13px; color: var(--text); font-variant-numeric: tabular-nums;
+  font-family: var(--mono); font-size: 12px; color: var(--text);
+  font-variant-numeric: tabular-nums; letter-spacing: 0.08em;
 }
 #compass-minus, #compass-plus {
   position: absolute; bottom: 4px; width: 30px; height: 30px; border-radius: 50%;
-  padding: 0; font-size: 17px; line-height: 1; flex: none;
+  padding: 0; font-size: 16px; line-height: 1; flex: none;
 }
 #compass-minus { left: 6px; } #compass-plus { right: 6px; }
 #compass:not(.editable) #compass-minus, #compass:not(.editable) #compass-plus { opacity: .3; pointer-events: none; }
@@ -275,36 +442,93 @@ body.kiosk #flightboard { left: 16px; }   /* panel hidden in kiosk, reclaim the 
 #errlog {
   display: none; position: fixed; right: 12px; top: 12px; max-width: 60vw;
   max-height: 90vh; overflow: auto; z-index: 99;
-  background: rgba(40, 0, 0, 0.85); color: #ff9b9b; border: 1px solid #a33;
-  border-radius: 8px; padding: 12px; font: 11px/1.4 monospace; white-space: pre-wrap;
+  background: rgba(30, 6, 8, 0.9); color: #ff9b9b; border: 1px solid var(--bad);
+  border-radius: 3px; padding: 12px; font: 11px/1.4 var(--mono); white-space: pre-wrap;
 }
 
-input[type="range"] { width: 100%; accent-color: var(--accent); margin-top: 6px; }
+input[type="range"] { width: 100%; accent-color: var(--live); margin-top: 7px; }
 
-.unit-btn { font-size: 11px; padding: 6px 0; }
-.unit-btn.active { background: rgba(111, 211, 255, 0.32); border-color: var(--accent); color: #fff; }
+/* segmented button rows (unit toggle, reveal/hide, view switch) */
+.unit-btn { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; padding: 6px 0; }
+.unit-btn.active { background: rgba(36, 211, 201, 0.16); border-color: var(--live); color: var(--text); }
 
-.chips { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px; }
+.chips { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px; }
 .chips label {
-  display: flex; align-items: center; gap: 6px; font-size: 12px;
+  display: flex; align-items: center; gap: 7px; font-size: 12px;
   color: var(--text); cursor: pointer; padding: 3px 0;
 }
-.chips input { width: 14px; height: 14px; accent-color: var(--accent); }
+.chips input { width: 14px; height: 14px; accent-color: var(--live); flex: none; }
 
-#calib { margin: 4px 0 2px; }
-#calib summary {
-  cursor: pointer; font-size: 12px; color: var(--accent);
-  padding: 4px 0; -webkit-user-select: none; user-select: none;
-}
-
-/* Kiosk / projecting: keep a slimmed-down panel (only the sections tagged
-   .kiosk-keep) so you still have the essential controls — display mode, visible
-   sky, zoom, North, layers, location — without the full options wall. */
+/* ---- kiosk / projecting: slim panel to the essentials -------------------------- */
 body.kiosk #panel section:not(.kiosk-keep),
 body.kiosk #panel .panel-foot { display: none; }
-body.kiosk #panel { width: 250px; }
+body.kiosk #panel { width: 256px; }
 
-/* WebXR buttons (injected by three.js) — place VR and AR side by side */
-#VRButton { border-radius: 8px !important; transform: translateX(-82px); }
-#ARButton { border-radius: 8px !important; transform: translateX(82px); }
+/* WebXR buttons (injected by three.js) */
+#VRButton { border-radius: 3px !important; transform: translateX(-82px); }
+#ARButton { border-radius: 3px !important; transform: translateX(82px); }
 body.kiosk #VRButton, body.kiosk #ARButton { display: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  #status::before, #iss-alert.now, #atc-chip.tuning .atc-dot { animation: none; }
+}
+
+/* ---- Arrange / snap-grid dashboard (js/dashboard.js) ---------------------------- */
+/* One global edit overlay: a translucent 24px grid + scrim (the scrim also absorbs
+   empty-space pointerdowns so the dome/radar canvas drags are neutralised while
+   arranging), with one draggable/resizable frame per widget. Shown only in
+   body.layout-edit. All chrome uses the shared tokens. */
+#dash-edit-layer {
+  position: fixed; inset: 0; z-index: 1000; display: none; cursor: default;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 23px, rgba(120, 150, 170, 0.10) 23px 24px),
+    repeating-linear-gradient(90deg, transparent 0 23px, rgba(120, 150, 170, 0.10) 23px 24px),
+    rgba(6, 9, 12, 0.34);
+}
+body.layout-edit #dash-edit-layer { display: block; }
+
+.dash-frame {
+  position: absolute; box-sizing: border-box; cursor: move;
+  border: 1px dashed var(--live); background: rgba(36, 211, 201, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+.dash-frame:hover { background: rgba(36, 211, 201, 0.12); }
+.dash-tag {
+  position: absolute; top: 3px; left: 4px; pointer-events: none;
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--live); background: rgba(8, 10, 13, 0.72); padding: 1px 5px; border-radius: 2px;
+}
+.dash-resize {
+  position: absolute; right: -1px; bottom: -1px; width: 15px; height: 15px;
+  background: var(--live); cursor: nwse-resize;
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+
+.dash-palette {
+  position: absolute; top: 44px; left: 50%; transform: translateX(-50%);
+  width: 300px; max-height: 76vh; overflow: auto; padding: 12px 14px;
+  background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 3px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6); font-family: var(--sans);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.dash-pal-head {
+  font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--text); padding-bottom: 8px; margin-bottom: 8px;
+  border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 6px;
+}
+.dash-pal-head::before { content: ''; width: 6px; height: 6px; background: var(--live); box-shadow: 0 0 6px var(--live); border-radius: 1px; }
+.dash-pal-view { color: var(--muted); font-weight: 500; letter-spacing: 0.1em; }
+.dash-pal-list { display: flex; flex-direction: column; gap: 4px; }
+.dash-pal-row { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--text); cursor: pointer; padding: 3px 0; }
+.dash-pal-row input { accent-color: var(--live); width: 15px; height: 15px; flex: none; }
+.dash-pal-actions { display: flex; gap: 8px; margin-top: 12px; }
+.dash-pal-actions button { flex: 1; }
+.dash-pal-done { background: rgba(36, 211, 201, 0.16); border-color: var(--live); color: var(--text); }
+.dash-pal-hint { font-family: var(--mono); font-size: 9.5px; color: var(--mute-2); line-height: 1.6; margin: 10px 0 0; }
+
+/* operator force-hide (palette toggle) — intentionally beats a widget's own inline display */
+.dash-force-hide { display: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-frame, .dash-resize { transition: none; }
+}

@@ -21,6 +21,8 @@ import { NavLights } from './navlights.js';
 import { FlightBoard } from './flightboard.js';
 import { FisheyeDome } from './fisheye.js';
 import { CeilingBrush } from './ceiling-brush.js';
+import { RadarRenderer } from './radar.js';
+import { DashboardLayout } from './dashboard.js';
 import { loadModels } from './assets.js';
 import { DEG } from './coords.js';
 import { initUI } from './ui.js';
@@ -42,10 +44,13 @@ const state = {
   showPath: true,      // draw the came-from / going-to path for the selected plane
   weather: true,       // real cloud cover
   autoNorth: false,    // align North from device compass
-  display: 'ceiling',  // 'free' | 'ceiling' | 'fisheye' — fisheye dome is the projector default
+  display: 'ceiling',  // 'free' | 'ceiling' | 'fisheye' | 'radar' (top-down tactical scope)
+  cats: { mil: true, law: true, ems: true, civ: true }, // service filter (all views): uncheck CIV for gov/mil only
+  radarRangeNm: 80,    // radar scope range (outer ring), nautical miles
+  sweep: true,         // radar rotating sweep
   northDeg: 0,         // orientation of North for ceiling/fisheye projection
   zoom: 1,             // works in every mode (FOV / fisheye disc scale)
-  skySpanDeg: 120,     // ceiling: how wide a cone of sky fills the disc (the "radius")
+  skySpanDeg: 100,     // ceiling: how wide a cone of sky fills the disc (the "radius"); capped so off-zenith perspective stays clean
   skyOnly: false,      // ceiling: hide everything but aircraft (bare-ceiling projection)
   guides: true,        // show the graticule (horizon ring, az spokes, cardinal labels)
   board: true,         // show the bottom-left "live sky" flight/satellite board
@@ -108,7 +113,10 @@ controls.maxPolarAngle = Math.PI * 0.985;
 controls.update();
 
 renderer.domElement.addEventListener('wheel', (e) => {
-  state.zoom = THREE.MathUtils.clamp(state.zoom * (e.deltaY < 0 ? 1.08 : 0.926), 0.4, 6);
+  // In ceiling mode the FOV is capped (see applyZoom), so zooming out below 1× just hits
+  // the cap and feels dead — floor the ceiling zoom at 1× so the wheel always does something.
+  const zmin = state.display === 'ceiling' ? 1 : 0.4;
+  state.zoom = THREE.MathUtils.clamp(state.zoom * (e.deltaY < 0 ? 1.08 : 0.926), zmin, 6);
   applyZoom();
   ui.setZoom(state.zoom);
 }, { passive: true });
@@ -151,6 +159,10 @@ const meteors = new MeteorLayer(scene);
 const navLights = new NavLights(scene, layers.aircraft.geo);
 const flightBoard = new FlightBoard();
 const atc = new AtcAudio();
+// When the tuned ATC channel has voice on it, highlight the flight it's working
+// (teal "on-air" halo in the dome; the chip pulses too). Honest: it's the facility's
+// feed, not the exact cockpit — we highlight the flight that feed is following.
+atc.onVoice((entryId) => layers.aircraft.setSpeaking(entryId));
 const towers = new TowerLayer(scene);
 
 // Build the in-range tower markers + the options-panel checkboxes. Called when
@@ -221,7 +233,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   }
 });
 renderer.domElement.addEventListener('pointerdown', (e) => {
-  if (state.display === 'free' || hoveredData) return; // free look + grabbing a plane untouched
+  if (state.display === 'free' || state.display === 'radar' || hoveredData) return; // free look / radar / grabbing a plane untouched
   dragOri = { x: e.clientX, north: state.northDeg, moved: false };
   renderer.domElement.setPointerCapture?.(e.pointerId);
 });
@@ -300,13 +312,41 @@ function pick() {
     if (data?.kind !== 'tower') atc.tune(shown.entry);
   } else {
     layers.aircraft.hidePath();
+    if (data?.kind !== 'tower') atc.clearManual();   // release manual focus → fall back to kept/follow
   }
 }
+
+// Shared observer-set path: the dome's "Your location" form AND the radar's own
+// location control (lat/lon inputs, "use my location", click-to-place) both funnel
+// through this one function, so wherever the location is changed, everything that
+// depends on it (aircraft poll, weather, towers, the radar's own display) stays in sync.
+function setObserver(obs) {
+  state.observer = obs;
+  saveObserver(obs);
+  ui.setObserver(obs);
+  refreshAircraft();
+  refreshWeather();
+  rebuildTowers();
+}
+
+// The radar's own Range control also drives the actual ADS-B fetch radius (rangeKm),
+// so the display radius always matches the data radius — no showing empty ring past
+// where you're actually polling.
+function setRadarRange(nm) {
+  state.radarRangeNm = nm;
+  state.rangeKm = Math.round(nm * 1.852); // NM -> km
+  radar.setRange(nm);
+  refreshAircraft();
+}
+
+// A display-mode change from ANYWHERE (dome select, kiosk URL, radar's own view
+// switcher) goes through this so the dome <select> and the radar both stay in sync.
+function changeDisplay(mode) { setDisplay(mode); ui.setDisplayMode(mode); }
 
 // --- UI ---
 const ui = initUI({
   state,
-  onObserverChange: (obs) => { state.observer = obs; saveObserver(obs); refreshAircraft(); refreshWeather(); rebuildTowers(); },
+  onObserverChange: setObserver,
   onLayerToggle: (name, on) => {
     state.layers[name] = on;
     // aircraft always obey their toggle; sky layers stay hidden while "aircraft only"
@@ -326,9 +366,18 @@ const ui = initUI({
   onPathToggle: (on) => { state.showPath = on; if (!on) layers.aircraft.hidePath(); },
   onGroundToggle: (on) => setGround(on),
   onLabelFields: (fields) => { state.labelFields = fields; layers.aircraft.setLabelFields(fields); },
-  onDisplayChange: (mode) => setDisplay(mode),
+  onDisplayChange: changeDisplay,
+  // service filter (mil/law/ems/civ) — applies to every view; the radar's own copy of
+  // this filter calls the SAME callback, and the dome aircraft layer hides filtered
+  // categories (see aircraft.js) — a single source of truth either way.
+  onCatFilter: (cats) => { state.cats = cats; layers.aircraft.setCatFilter(cats); },
   onNorthChange: (deg) => { state.northDeg = ((deg % 360) + 360) % 360; },
-  onZoom: (z) => { state.zoom = z; applyZoom(); },
+  onZoom: (z) => {
+    // Ceiling FOV is capped, so zoom < 1 does nothing there — floor it so the slider isn't dead.
+    state.zoom = state.display === 'ceiling' ? Math.max(1, z) : z;
+    applyZoom();
+    if (state.zoom !== z) ui.setZoom(state.zoom);
+  },
   onSkySpan: (deg) => { state.skySpanDeg = deg; applyZoom(); },
   onSkyOnly: (on) => setSkyOnly(on),
   onGuidesToggle: (on) => { state.guides = on; setGuides(skyGroup, on); },
@@ -350,6 +399,9 @@ clouds.setVisible(state.weather);
 setGround(state.ground);
 atc.setEnabled(state.atc);   // ATC audio on hover is always on (no toggle)
 layers.aircraft.setLabelFields(state.labelFields);
+layers.aircraft.setCatFilter(state.cats);
+// When a flight ENTERS an emergency squawk, log it to the day's incident timeline.
+layers.aircraft.onIncident = (evt) => ui.logIncident(evt);
 
 function setGround(on) {
   state.ground = on;
@@ -387,6 +439,26 @@ fisheye.setFovDeg(state.dome.fov);
 // shape of their real flat ceiling (reveal sky / black out the spill). Self-contained
 // 2D overlay + controls; main.js only tells it the current display mode + window size.
 const ceilingBrush = new CeilingBrush();
+
+// Top-down tactical radar (desktop): an explorable geo map (Web Mercator, pan/zoom,
+// optional satellite/terrain basemap), your own position marked, live aircraft plotted
+// at their true lat/lon. Fully self-contained (builds its own controls/status/track
+// list overlay, like ceiling-brush.js does); it only talks back to main.js through
+// these callbacks so the rest of the app (observer, filters, other views) stays in sync.
+const radar = new RadarRenderer(document.getElementById('radar'), {
+  onObserverChange: setObserver,
+  onRangeChange: setRadarRange,
+  onCatFilter: (cats) => { state.cats = cats; layers.aircraft.setCatFilter(cats); },
+  onDisplayChange: changeDisplay,
+});
+radar.setRange(state.radarRangeNm);
+radar.setSweep(state.sweep);
+
+// Operator "Arrange" mode: drag / resize / show-hide every widget on a snap grid, PER
+// view, saved to localStorage. Self-contained (builds its own edit overlay + palette);
+// main.js only tells it the current display mode + window size. Built AFTER radar because
+// it manages the #rdr-* panels, which RadarRenderer creates in its constructor above.
+const dashboard = new DashboardLayout();
 
 // apply the initial display mode (ceiling by default) + sky-only state on boot
 setDisplay(state.display);
@@ -433,8 +505,14 @@ function setDisplay(mode) {
   // well-behaved overhead cone is lit (a flat ceiling can only honestly show the
   // sky roughly overhead — gnomonic stretch blows up toward the horizon).
   document.body.classList.toggle('ceiling-on', mode === 'ceiling');
-  // the painted ceiling mask only applies over a projector image (ceiling/fisheye)
-  ceilingBrush?.setDisplayMode(mode);
+  // the painted ceiling mask only applies over a projector image (ceiling/fisheye) —
+  // never over the radar scope (pass 'free'-equivalent so it deactivates there)
+  ceilingBrush?.setDisplayMode(mode === 'radar' ? 'free' : mode);
+  // radar mode swaps the WebGL dome for the top-down map (+ its own chrome); pass
+  // state so radar can seed its service-filter checkboxes from the current state.cats
+  radar?.setActive(mode === 'radar', state);
+  // engage the per-view saved layout (dome bucket for ceiling/fisheye/free, radar for radar)
+  dashboard?.setDisplayMode(mode);
   applyZoom();
 }
 
@@ -442,14 +520,21 @@ function setDisplay(mode) {
 // perspective modes, magnifies the dome disc in fisheye.
 function applyZoom() {
   const z = state.zoom;
+  if (state.display === 'radar') return;   // radar range is set by its own control, not FOV/zoom
   if (state.display === 'fisheye') {
     fisheye.setCalibration({ scale: z });
   } else {
     // Ceiling: the "visible sky" slider sets how wide a cone of sky maps to the
     // disc (bigger span = more of the dome / smaller objects); zoom magnifies on
     // top. Free look at 1x ≈ a natural ~58° human field of view.
-    const base = state.display === 'ceiling' ? state.skySpanDeg : 58;
-    camera.fov = THREE.MathUtils.clamp(base / z, 8, 160);
+    // Ceiling gets its own lower FOV cap (100° vs 160°): a rectilinear projection
+    // magnifies off-axis content by ~1/cos²(θ), so a very wide FOV shears/stretches any
+    // plane away from the zenith (screen-centre). Capping at 100° keeps the edge tame
+    // (~2.4× vs ~33× at 160°) — the trimmed cone was the near-horizon the round mask
+    // already blacks out anyway. Free look keeps the wide 160° cap.
+    const isCeiling = state.display === 'ceiling';
+    const base = isCeiling ? state.skySpanDeg : 58;
+    camera.fov = THREE.MathUtils.clamp(base / z, 8, isCeiling ? 100 : 160);
     camera.updateProjectionMatrix();
   }
 }
@@ -467,9 +552,9 @@ async function refreshAircraft() {
   // server served last-known data because both ADS-B sources failed upstream.
   // A clean poll restores "Live". Only the aircraft feed drives this banner; the
   // dome keeps running on cached/extrapolated data either way.
-  if (r.error) ui.status('Aircraft feed offline — showing last-known');
-  else if (r.stale) ui.status('Aircraft feed stale — upstream down');
-  else ui.status('Live');
+  if (r.error) { ui.status('Aircraft feed offline — showing last-known'); radar.setFeedStatus('offline'); }
+  else if (r.stale) { ui.status('Aircraft feed stale — upstream down'); radar.setFeedStatus('stale'); }
+  else { ui.status('Live'); radar.setFeedStatus('nominal'); }
 }
 async function refreshWeather() {
   try {
@@ -536,6 +621,8 @@ setInterval(refreshIss, 12_000);
 setInterval(() => {
   flightBoard.tick();
   renderIss();
+  // live distress box: any in-range aircraft squawking an emergency (7500/7600/7700)
+  ui.renderDistress(layers.aircraft.emergencies(state.observer));
   // satellite badge = how many are actually above the horizon right now
   if (state.layers.satellites) ui.setCount('satellites', layers.satellites.visibleSats.length);
 }, 1000);
@@ -545,6 +632,21 @@ let lastPick = 0, lastPump = 0, lastBoard = 0, lastTick = 0;
 renderer.setAnimationLoop((t) => {
   const d = now();
   const elapsed = t * 0.001;
+  atc.sampleVoice();   // ATC voice-activity → "transmitting" indicator (runs in every mode)
+
+  // Radar mode: a flat top-down scope, not the dome. It only needs live aircraft
+  // positions (aircraft.update sets entry.render = smoothed lat/lon), so we skip the
+  // whole celestial/cloud/lighting pipeline and the WebGL scene render — cheap.
+  if (state.display === 'radar') {
+    layers.aircraft.ceilingMode = false;
+    // Update unconditionally so entry.render (smoothed lat/lon) never freezes; the radar
+    // hides tracks itself when the Aircraft layer is toggled off (see radar._collect).
+    layers.aircraft.update(state.observer, t);
+    if (t - lastPump > 500) { layers.aircraft.pump(3); lastPump = t; } // enrich for the detail panel
+    radar.render(t, layers.aircraft, state.observer, state);
+    ui.tick(d);
+    return;
+  }
 
   if (state.layers.stars) layers.stars.update(state.observer, d, elapsed);
   layers.planets.update(state.observer, d); // always (drives sun light)
@@ -596,7 +698,7 @@ renderer.setAnimationLoop((t) => {
     // pick()) takes priority; tuneForAircraft debounces so this can't thrash.
     if (!(focused?.kind === 'aircraft' && focused.entry)) {
       const top = layers.aircraft.topOverheadEntry(state.observer);
-      if (top) atc.tune(top);
+      atc.followOverhead(top || null);   // lowest-priority auto slot; a hovered/kept feed still wins
     }
     lastBoard = t;
   }
@@ -644,6 +746,8 @@ window.addEventListener('resize', () => {
   bloom.setSize(window.innerWidth / 2, window.innerHeight / 2);
   fisheye.setSize(window.innerWidth, window.innerHeight);
   ceilingBrush.resize();
+  radar.resize();
+  dashboard.resize();
 });
 fisheye.setSize(window.innerWidth, window.innerHeight);
 
@@ -670,9 +774,9 @@ if (navigator.xr?.isSessionSupported) {
 {
   const params = new URLSearchParams(location.search);
   const m = params.get('display');
-  if (['free', 'ceiling', 'fisheye'].includes(m)) {
+  if (['free', 'ceiling', 'fisheye', 'radar'].includes(m)) {
     state.display = m; setDisplay(m);
-    const sel = document.getElementById('display-mode'); if (sel) sel.value = m;
+    ui.setDisplayMode(m); // sync the <select> AND the per-mode control rows (range/sweep/skyspan)
   }
   if (params.has('north')) {
     const v = parseInt(params.get('north'), 10) || 0;
@@ -681,7 +785,7 @@ if (navigator.xr?.isSessionSupported) {
     const lbl = document.getElementById('north-val'); if (lbl) lbl.textContent = `${v}°`;
   }
   if (params.has('span')) {
-    const v = THREE.MathUtils.clamp(parseInt(params.get('span'), 10) || 130, 50, 160);
+    const v = THREE.MathUtils.clamp(parseInt(params.get('span'), 10) || 100, 50, 100);
     state.skySpanDeg = v; applyZoom();
     const r = document.getElementById('skyspan'); if (r) r.value = v;
     const lbl = document.getElementById('skyspan-val'); if (lbl) lbl.textContent = `${v}°`;

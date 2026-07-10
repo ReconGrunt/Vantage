@@ -349,6 +349,59 @@ app.get('/api/weather', async (req, res) => {
   }
 });
 
+// --- Map basemap tiles (satellite / terrain, for the top-down radar view) ---------
+// GET /api/tile/:style/:z/:x/:y  -> proxies + caches one standard XYZ slippy-map tile
+// (256x256, EPSG:3857/Web Mercator — the same scheme Google/Bing/OSM/Leaflet use), so
+// the radar's basemap works with no API key and no CORS/browser hotlinking issues.
+//
+// Provider: Esri's public "World_Imagery" (satellite) and "World_Topo_Map" (terrain +
+// street reference) ArcGIS REST tile services — free, no key, widely used for exactly
+// this kind of embedded map. NOTE for a government-submission context: review Esri's
+// terms of use (esri.com/en-us/legal/terms/full-master-agreement) for YOUR specific
+// redistribution scenario before final submission — this proxy is technically correct
+// and the endpoints are commonly used free-of-charge, but licensing sign-off for a
+// formal deliverable is a decision for the submitting team, not this code.
+const TILE_PROVIDERS = {
+  sat: (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`,
+  terrain: (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/${z}/${y}/${x}`,
+};
+const TILE_UA = { 'User-Agent': 'LivelySky/1.0 (tactical radar basemap; github.com/ReconGrunt/LivelySky)' };
+// Separate from the generic JSON `cache` above: tile values are binary buffers, keyed
+// over a practically unbounded (z,x,y) space (a browsable world map), so this cache is
+// capacity-bounded (evict oldest — Map preserves insertion order) rather than time-swept.
+const tileCache = new Map(); // "style/z/x/y" -> { buf, type, expires }
+const TILE_CACHE_MAX = 4000;
+
+app.get('/api/tile/:style/:z/:x/:y', async (req, res) => {
+  const { style, z, x, y } = req.params;
+  const make = TILE_PROVIDERS[style];
+  const zi = parseInt(z, 10), xi = parseInt(x, 10), yi = parseInt(y, 10);
+  if (!make || !Number.isInteger(zi) || !Number.isInteger(xi) || !Number.isInteger(yi)
+      || zi < 0 || zi > 19 || xi < 0 || yi < 0) {
+    return res.status(400).end();
+  }
+  const key = `${style}/${zi}/${xi}/${yi}`;
+  const hit = tileCache.get(key);
+  if (hit && hit.expires > Date.now()) {
+    res.setHeader('Content-Type', hit.type);
+    res.setHeader('Cache-Control', 'public, max-age=604800');
+    return res.end(hit.buf);
+  }
+  try {
+    const upstream = await fetch(make(zi, xi, yi), { headers: TILE_UA, signal: AbortSignal.timeout(8000) });
+    if (!upstream.ok) return res.status(upstream.status).end();
+    const type = upstream.headers.get('content-type') || 'image/png';
+    const buf = Buffer.from(await upstream.arrayBuffer());
+    if (tileCache.size >= TILE_CACHE_MAX) tileCache.delete(tileCache.keys().next().value);
+    tileCache.set(key, { buf, type, expires: Date.now() + 7 * 24 * 60 * 60 * 1000 }); // imagery rarely changes; cache a week
+    res.setHeader('Content-Type', type);
+    res.setHeader('Cache-Control', 'public, max-age=604800');
+    res.end(buf);
+  } catch {
+    res.status(502).end();
+  }
+});
+
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
 // --- static frontend --------------------------------------------------------

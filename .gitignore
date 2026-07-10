@@ -10,5 +10,13 @@ stars_raw.csv
 AGENT_COMMS.md
 AGENT_SWARM*.md
 
+# Internal planning / sprint summary notes — keep local, never publish
+2026_agent_schema.md
+OPTIMIZATION_SUMMARY.md
+SPRINT*_SUMMARY.md
+
+# Claude Code local files (settings, session/plan/memory scratch) — never publish
+.claude/
+
 # Scratch model candidates being evaluated — not shipped (real models live in public/models/)
 tmp_models/

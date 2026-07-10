@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LivelySky — Live Sky</title>
+  <title>LivelySky — Airspace &amp; Sky Situational Awareness</title>
   <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/radar.css" />
   <script type="importmap">
   {
     "imports": {
@@ -31,9 +32,20 @@
   <canvas id="ceiling-brush"></canvas>
   <div id="brush-cursor"></div>
 
+  <!-- Top-down tactical "scope" view (desktop). A flat geographic PPI: ownship centred,
+       North up, aircraft plotted by real lat/lon with range rings, sweep, MIL-STD-2525
+       tracks, a track list and status strip. Shown only in radar mode. See js/radar.js. -->
+  <canvas id="radar"></canvas>
+
   <div id="panel">
     <div class="panel-head">
-      <h1>LivelySky</h1>
+      <div class="brand">
+        <span class="brand-mark"></span>
+        <div class="brand-txt">
+          <h1>LIVELYSKY</h1>
+          <span class="brand-sub">Sky Situational Awareness</span>
+        </div>
+      </div>
       <button type="button" id="collapse" title="Collapse">⟨⟩</button>
     </div>
 
@@ -45,12 +57,12 @@
 
       <section>
         <h2>Layers</h2>
-        <label class="row"><input type="checkbox" id="toggle-aircraft" /> ✈ Aircraft
+        <label class="row"><input type="checkbox" id="toggle-aircraft" /> Aircraft
           <span class="count" id="count-aircraft">0</span></label>
-        <label class="row"><input type="checkbox" id="toggle-satellites" /> 🛰 Satellites
+        <label class="row"><input type="checkbox" id="toggle-satellites" /> Satellites
           <span class="count" id="count-satellites">0</span></label>
-        <label class="row"><input type="checkbox" id="toggle-planets" /> 🪐 Planets / Sun / Moon</label>
-        <label class="row"><input type="checkbox" id="toggle-stars" /> ✦ Stars
+        <label class="row"><input type="checkbox" id="toggle-planets" /> Planets · Sun · Moon</label>
+        <label class="row"><input type="checkbox" id="toggle-stars" /> Stars
           <span class="count" id="count-stars">0</span></label>
 
         <label class="row sub">Satellite set
@@ -64,6 +76,17 @@
             <option value="active">All active</option>
           </select>
         </label>
+      </section>
+
+      <section>
+        <h2>Aircraft filter <span class="count">service</span></h2>
+        <div class="chips">
+          <label><input type="checkbox" data-cat="mil" checked /> Military</label>
+          <label><input type="checkbox" data-cat="law" checked /> Law enforcement</label>
+          <label><input type="checkbox" data-cat="ems" checked /> EMS / Fire</label>
+          <label><input type="checkbox" data-cat="civ" checked /> Civilian</label>
+        </div>
+        <p class="hint">Show/hide aircraft by service. Uncheck Civilian for a government/military-only picture — applies to every view (dome and radar).</p>
       </section>
 
       <section>
@@ -95,8 +118,19 @@
 
       <section>
         <h2>ATC towers <span class="count">horizon</span></h2>
-        <p class="hint">Facilities near you appear on the horizon. Hover one to listen; tick to keep one (or several) playing. Source: LiveATC.net.</p>
+        <p class="hint">Facilities near you appear on the horizon. Hover one to listen; tick to keep one. One voice at a time — the most-recent selection is audible (hover &gt; kept &gt; auto-overhead). Source: LiveATC.net.</p>
         <div id="tower-list" class="tower-list"><span class="hint">— none in range —</span></div>
+      </section>
+
+      <section>
+        <h2>Air incidents <span class="count" id="incident-count">today</span></h2>
+        <div class="btn-row" id="incident-window">
+          <button type="button" class="unit-btn" data-win="15">15m</button>
+          <button type="button" class="unit-btn active" data-win="60">1h</button>
+          <button type="button" class="unit-btn" data-win="1440">Day</button>
+        </div>
+        <div id="incident-list" class="incident-list"><span class="hint">— none logged —</span></div>
+        <p class="hint">Emergency squawks (7500 hijack · 7700 emergency · 7600 radio fail) seen since launch, this UTC day. Self-logged from the live feed — no free public air-incident database exists.</p>
       </section>
 
       <section>
@@ -121,11 +155,13 @@
             <option value="ceiling" selected>Ceiling skylight (flat roof)</option>
             <option value="fisheye">Fisheye dome 180° (planetarium dome)</option>
             <option value="free">Free look (screen)</option>
+            <option value="radar">Tactical radar (top-down)</option>
           </select>
         </label>
+        <p class="hint">The tactical radar view (top-down map) has its own dedicated controls — location, range, basemap — once selected.</p>
         <label class="row sub" id="skyspan-row">Visible sky
-          <input type="range" id="skyspan" min="50" max="160" step="1" value="130" />
-          <span class="count" id="skyspan-val">130°</span>
+          <input type="range" id="skyspan" min="50" max="100" step="1" value="100" />
+          <span class="count" id="skyspan-val">100°</span>
         </label>
         <label class="row sub">Zoom
           <input type="range" id="zoom" min="0.4" max="6" step="0.02" value="1" />
@@ -220,6 +256,13 @@
     <span id="atc-name">ATC</span>
     <input type="range" id="atc-vol" min="0" max="1" step="0.05" value="0.8" title="Volume" />
     <button type="button" id="atc-stop" title="Stop">■</button>
+  </div>
+
+  <!-- Emergency / distress panel: aircraft squawking 7500/7600/7700 in range. Shown in
+       every view; auto-hides when there are none. Severity ramp lives in js/emergency.js. -->
+  <div id="distress" hidden>
+    <div class="distress-head"><span>⚠ Distress</span><span id="distress-count"></span></div>
+    <div id="distress-list"></div>
   </div>
 
   <!-- Terminal-style arrivals board: what's overhead now and coming over soon -->

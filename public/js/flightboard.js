@@ -9,7 +9,7 @@ const CAT_CLASS = { law: 'fb-law', mil: 'fb-mil', ems: 'fb-ems', civ: '' };
 export class FlightBoard {
   constructor() {
     this.el = document.getElementById('flightboard');
-    this.maxRows = 5;
+    this.maxRows = 4;
   }
 
   setVisible(v) { if (this.el) this.el.style.display = v ? 'block' : 'none'; }
@@ -22,7 +22,7 @@ export class FlightBoard {
 
     const head = `
       <div class="fb-titlebar">
-        <span class="fb-brand">✈ LIVELYSKY · LIVE SKY</span>
+        <span class="fb-brand">LIVELYSKY · OVERHEAD MANIFEST</span>
         <span class="fb-clock">${time} UTC</span>
       </div>
       <div class="fb-colhead">
@@ -55,7 +55,7 @@ export class FlightBoard {
     this.el.innerHTML = head
       + `<div class="fb-sectlabel">DIRECTLY OVERHEAD</div>${overheadRows}`
       + `<div class="fb-sectlabel">PASSING OVER SOON</div>${inboundRows}`
-      + `<div class="fb-sectlabel fb-sat">🛰 SATELLITES OVERHEAD</div>${satRows}`;
+      + `<div class="fb-sectlabel fb-sat">SATELLITES OVERHEAD</div>${satRows}`;
   }
 
   // update just the countdown spans every second (cheap, no recompute)

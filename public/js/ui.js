@@ -1,6 +1,6 @@
 // ui.js — overlay panel: layer toggles, observer location, clock, object info.
 
-export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, onBloomToggle, onAtcToggle, onNavToggle, onWeatherToggle, onGroundToggle, onPathToggle, onLabelFields, onDisplayChange, onNorthChange, onZoom, onSkySpan, onSkyOnly, onGuidesToggle, onBoardToggle, onAutoNorth, onCalibration, onRange, onSatGroupChange }) {
+export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, onBloomToggle, onAtcToggle, onNavToggle, onWeatherToggle, onGroundToggle, onPathToggle, onLabelFields, onDisplayChange, onNorthChange, onZoom, onSkySpan, onSkyOnly, onGuidesToggle, onBoardToggle, onAutoNorth, onCalibration, onRange, onSatGroupChange, onCatFilter }) {
   const $ = (id) => document.getElementById(id);
 
   // layer toggles
@@ -45,11 +45,23 @@ export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, 
     });
   }
 
+  // aircraft service filter (mil / law / ems / civ) — applies to every view
+  const catEls = [...document.querySelectorAll('[data-cat]')];
+  for (const el of catEls) {
+    el.checked = state.cats?.[el.dataset.cat] !== false;
+    el.addEventListener('change', () => {
+      const cats = {};
+      for (const e of catEls) cats[e.dataset.cat] = e.checked;
+      onCatFilter?.(cats);
+    });
+  }
+
   // display / projection
   const displayEl = $('display-mode');
   displayEl.value = state.display;
   function updateModeRows() {
-    // the "Visible sky" span only applies to the ceiling perspective view
+    // the "Visible sky" span only applies to the ceiling perspective view (radar mode
+    // hides the whole dome panel in CSS, so no radar-specific row toggling is needed here)
     $('skyspan-row').style.display = displayEl.value === 'ceiling' ? '' : 'none';
   }
   updateModeRows();
@@ -225,9 +237,79 @@ export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, 
 
   function status(text) { $('status').textContent = text; }
 
+  // ---- distress box: aircraft currently squawking an emergency, most-severe first ----
+  function renderDistress(list) {
+    const box = $('distress');
+    if (!box) return;
+    if (!list || !list.length) { box.hidden = true; return; }
+    box.hidden = false;
+    $('distress-count').textContent = `${list.length} in range`;
+    $('distress-list').innerHTML = list.map((e) => `
+      <div class="distress-row">
+        <span class="distress-sev" style="color:${e.hex};background:${e.hex}"></span>
+        <span class="distress-main">
+          <div class="distress-call">${esc(e.callsign)}</div>
+          <div class="distress-reason">${esc(e.reason)}${e.type ? ' · ' + esc(e.type) : ''}</div>
+        </span>
+        <span class="distress-right">
+          <div class="distress-code" style="color:${e.hex}">${e.code} ${esc(e.label)}</div>
+          <div class="distress-meta">${e.rangeNm.toFixed(0)} NM · ${String(Math.round(e.brgDeg)).padStart(3, '0')}°</div>
+        </span>
+      </div>`).join('');
+  }
+
+  // ---- air-incident log: emergency squawks observed this UTC day (localStorage) ----
+  const INCIDENT_KEY = 'incidentLog';
+  const todayUTC = () => new Date().toISOString().slice(0, 10);
+  const loadIncidents = () => { try { return JSON.parse(localStorage.getItem(INCIDENT_KEY)) || {}; } catch { return {}; } };
+  const saveIncidents = (o) => { try { localStorage.setItem(INCIDENT_KEY, JSON.stringify(o)); } catch { /* quota */ } };
+  let incidentWindowMin = 60;
+  function logIncident(evt) {
+    const log = loadIncidents();
+    const day = todayUTC();
+    const arr = log[day] || (log[day] = []);
+    arr.push({ ts: Date.now(), id: evt.id, callsign: evt.callsign, code: evt.code, label: evt.label, sev: evt.sev, hex: evt.hex });
+    if (arr.length > 300) arr.splice(0, arr.length - 300);
+    const keep = new Set([day, new Date(Date.now() - 864e5).toISOString().slice(0, 10)]);
+    for (const k of Object.keys(log)) if (!keep.has(k)) delete log[k];
+    saveIncidents(log);
+    renderIncidents();
+  }
+  function renderIncidents() {
+    const list = $('incident-list');
+    if (!list) return;
+    const today = (loadIncidents()[todayUTC()] || []).slice().reverse();
+    const cutoff = Date.now() - incidentWindowMin * 60000;
+    const shown = today.filter((e) => e.ts >= cutoff);
+    $('incident-count').textContent = shown.length ? `${shown.length} today` : 'today';
+    if (!shown.length) { list.innerHTML = '<span class="hint">— none logged —</span>'; return; }
+    const z = (n) => String(n).padStart(2, '0');
+    list.innerHTML = shown.map((e) => {
+      const d = new Date(e.ts);
+      return `<div class="incident-row">
+        <span class="incident-time">${z(d.getUTCHours())}:${z(d.getUTCMinutes())}Z</span>
+        <span class="incident-call">${esc(e.callsign)}</span>
+        <span class="incident-code" style="color:${e.hex || '#ff5324'}">${e.code} ${esc(e.label)}</span>
+      </div>`;
+    }).join('');
+  }
+  const winRow = $('incident-window');
+  if (winRow) winRow.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-win]');
+    if (!btn) return;
+    incidentWindowMin = parseInt(btn.dataset.win, 10);
+    for (const b of winRow.querySelectorAll('[data-win]')) b.classList.toggle('active', b === btn);
+    renderIncidents();
+  });
+  renderIncidents();
+
   return {
     status,
+    renderDistress, logIncident, renderIncidents,
     setObserver: fillLoc,
+    // Reflect a programmatic display-mode change (e.g. kiosk ?display=) into the select
+    // AND the per-mode control rows, since setting .value doesn't fire 'change'.
+    setDisplayMode(m) { displayEl.value = m; updateModeRows(); },
     setNorth(v) { showNorth(v); },
     setZoom(z) { zoomEl.value = z; zoomVal.textContent = `${(+z).toFixed(1)}×`; },
     setBearing(deg, editable) {
@@ -259,7 +341,11 @@ export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, 
       if (i.altitude) add('Altitude', i.altitude);
       if (i.speed) add('Speed', i.speed);
       if (i.heading) add('Heading', i.heading);
-      if (i.squawk) add('Squawk', i.squawk);
+      if (i.vspeed) add('V/S', i.vspeed);
+      if (i.emitter) add('Category', i.emitter);
+      if (i.icao24) add('ICAO24', String(i.icao24).toUpperCase());
+      if (i.squawkAlert) rows.push(`<div><span>Squawk</span> <b style="color:var(--bad)">${esc(i.squawkAlert)}</b></div>`);
+      else if (i.squawk) add('Squawk', i.squawk);
       if (i.phase) add('Phase', i.phase);
       if (i.rangeKm) add('Range', `${Math.round(i.rangeKm)} km`);
       if (i.azimuth != null) add('Azimuth', `${i.azimuth.toFixed(1)}°`);
@@ -294,7 +380,7 @@ function buildCompassRose(svg) {
     svg.appendChild(el);
     return el;
   };
-  add('circle', { cx: 0, cy: 0, r: 92, fill: 'none', stroke: 'rgba(120,150,190,0.35)', 'stroke-width': 2 });
+  add('circle', { cx: 0, cy: 0, r: 92, fill: 'none', stroke: 'rgba(120,145,165,0.28)', 'stroke-width': 1 });
   for (let d = 0; d < 360; d += 15) {
     const major = d % 90 === 0;
     const a = d * Math.PI / 180;
@@ -302,16 +388,17 @@ function buildCompassRose(svg) {
     add('line', {
       x1: Math.sin(a) * r1, y1: -Math.cos(a) * r1,
       x2: Math.sin(a) * r2, y2: -Math.cos(a) * r2,
-      stroke: major ? 'rgba(160,190,230,0.8)' : 'rgba(120,150,190,0.4)', 'stroke-width': major ? 2 : 1,
+      stroke: major ? 'rgba(205,218,228,0.7)' : 'rgba(120,145,165,0.32)', 'stroke-width': major ? 1.6 : 1,
     });
   }
-  const labels = [['N', 0, '#ff7b7b'], ['E', 90, '#cfe0f0'], ['S', 180, '#cfe0f0'], ['W', 270, '#cfe0f0']];
+  // North in the amber "attention" accent; the other cardinals stay dim.
+  const labels = [['N', 0, '#e8552a'], ['E', 90, '#8a97a3'], ['S', 180, '#8a97a3'], ['W', 270, '#8a97a3']];
   for (const [t, d, c] of labels) {
     const a = d * Math.PI / 180;
     add('text', {
       x: Math.sin(a) * 60, y: -Math.cos(a) * 60 + 6,
-      fill: c, 'font-size': 18, 'font-weight': 700, 'text-anchor': 'middle',
-      'font-family': 'Inter, Arial, sans-serif',
+      fill: c, 'font-size': 17, 'font-weight': 700, 'text-anchor': 'middle',
+      'font-family': 'Inter, system-ui, Arial, sans-serif', 'letter-spacing': '0.5',
     }, t);
   }
 }
