@@ -79,7 +79,7 @@ export class StarLayer {
     this.material = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
-        uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+        uPixelRatio: { value: Math.min(window.devicePixelRatio, 1.5) },
         uVisibility: { value: 1 },  // 0 in daylight .. 1 deep night
         uClouds: { value: 0 },      // 0..1 cloud cover dims the stars
       },

@@ -95,7 +95,7 @@ export class RadarRenderer {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.cb = callbacks;
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     this.w = 0; this.h = 0; this.cx = 0; this.cy = 0;
 
     this.rangeNm = 80;
@@ -165,7 +165,7 @@ export class RadarRenderer {
 
   resize() {
     const w = window.innerWidth, h = window.innerHeight;
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     this.canvas.width = Math.round(w * this.dpr);
     this.canvas.height = Math.round(h * this.dpr);
     this.canvas.style.width = w + 'px';
@@ -465,7 +465,7 @@ export class RadarRenderer {
     const rangeOpts = RADAR_RANGES_NM.map((nm) => `<button type="button" data-nm="${nm}"${nm === 80 ? ' class="active"' : ''}>${nm}</button>`).join('');
     el.innerHTML = `
       <div id="rdr-status">
-        <span class="rdr-brand"><i class="rdr-mark"></i><b>LIVELYSKY</b><span class="rdr-mode">Tactical Scope</span></span>
+        <span class="rdr-brand"><i class="rdr-mark"></i><b>VANTAGE</b><span class="rdr-mode">Air · Tactical Scope</span></span>
         <span class="rdr-sys"><i class="dot"></i><span id="rdr-feed">ADS-B LINK</span></span>
         <span id="rdr-clock" class="data"></span>
       </div>

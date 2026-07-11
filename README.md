@@ -1,14 +1,23 @@
-# LivelySky
+# Vantage · Air
 
-A live planetarium dome that projects the **real sky above your location** — aircraft,
-satellites, planets, the Sun, the Moon, the **Milky Way** and live **meteor showers** —
-each placed at its true azimuth and altitude. Everything is sourced from **free, no-key
-data** and respects the actual object in flight (real callsigns, real NORAD objects,
-real ephemerides). Point a projector straight up and it becomes an immersive ceiling.
+**Vantage** is a real-time common-operating-picture platform; this is its **Air / Sky**
+domain. It projects the **real sky above your location** — aircraft, satellites, planets,
+the Sun, the Moon, the **Milky Way** and live **meteor showers** — each placed at its true
+azimuth and altitude, from **free, no-key data** (real callsigns, real NORAD objects, real
+ephemerides). Point a projector straight up and it becomes an immersive ceiling.
 
-Built as a Three.js + WebXR web app so the same code runs on a projector
-(Chromium kiosk), in a browser, and in **Oculus / WebXR** headsets. Apple TV
-packaging and a native Roku port are the next platform steps.
+Vantage ships two ways from **one frontend codebase**:
+
+- **Vantage for Windows** — a native desktop app (Tauri v2 + WebView2) with its own
+  window, system tray (minimise-to-tray), single-instance, saved window position/size,
+  and auto-update. Its proxy is a **native Rust server embedded in the app** — no Node,
+  no bundled Chromium. The render loop pauses when the window is hidden so it doesn't eat
+  resources in the background.
+- **Web** — the identical UI served by a tiny Node/Express proxy, for a browser or a
+  Chromium projector kiosk. Also runs in **Oculus / WebXR** headsets.
+
+Both backends serve a **byte-compatible `/api` contract** (guarded by
+`scripts/contract-smoke.mjs`). Apple TV packaging and a native Roku port are next.
 
 ## Tech stack — and why it's the right one
 
@@ -17,9 +26,10 @@ packaging and a native Roku port are the next platform steps.
 | Rendering | **Three.js (WebGL2)** | Mature, fast, direct control of the real-time render loop. The whole app is one continuous draw loop over thousands of points + dozens of meshes — exactly what a thin WebGL layer is best at. |
 | XR | **WebXR** (built into Three.js) | One codebase gives desktop, projector, **and Oculus/Quest VR + passthrough AR** for free. No native VR rewrite. |
 | App code | **Vanilla ES modules** | No framework. A 60 fps render loop driving imperative GPU state gets nothing from React/Vue's diffing — they'd only add overhead and indirection. Modules keep it organised without a build step. |
-| Backend | **Node + Express** (tiny proxy) | Only job is to proxy/cache the free APIs (CORS + rate limits). Stateless and ~250 lines. |
-| Data | OpenSky · CelesTrak (SGP4 via `satellite.js`) · `astronomy-engine` · Open-Meteo · adsbdb · HYG | All free, mostly no-key; orbital + ephemeris math runs locally. |
-| Deps | CDN import-map (`three`, `satellite.js`, `astronomy-engine`) | Zero bundler; instant load; trivial to pin versions. |
+| Desktop shell | **Tauri v2 + WebView2** | Native window using the OS's existing Chromium (WebView2) — same WebGL2 renderer as Electron, without bundling a second browser. Tiny binary, low RAM. |
+| Backend | **Native Rust (axum)** for the app · **Node + Express** for web | Only job is to proxy/cache the free APIs (CORS + rate limits). One `/api` contract, two implementations kept in sync by a smoke test. |
+| Data | adsb.lol / adsb.fi · CelesTrak (SGP4 via `satellite.js`) · `astronomy-engine` · Open-Meteo · adsbdb · HYG | All free, no key; orbital + ephemeris math runs locally. |
+| Deps | **Vendored locally** (`public/vendor/`: `three`, `satellite.js`, `astronomy-engine`) via an import-map | No bundler and **no CDN** — the app boots fully offline. |
 
 **Verdict: no rewrite needed.** This is already the optimal stack for "one web codebase → screen + projector + Quest." The alternatives are worse fits here:
 - *React / react-three-fiber* — declarative reconciliation fights a manual render loop; pure overhead.
@@ -31,11 +41,28 @@ Optional future polish (not required): add **Vite + TypeScript** for build-time 
 
 ## Run it
 
+### Web (browser / projector kiosk)
+
 ```bash
 npm install
 npm start
 # open http://localhost:3000
 ```
+
+### Vantage for Windows (native app)
+
+Requires the Rust toolchain (`rustup`) and the WebView2 runtime (preinstalled on
+Windows 11). The Tauri CLI comes in as a dev dependency via `npm install`.
+
+```bash
+npm run tauri:dev      # dev window with live devtools
+npm run tauri:build    # NSIS installer -> src-tauri/target/release/bundle/nsis/
+```
+
+The app embeds a native Rust proxy on `127.0.0.1:47615` and opens its window there,
+so the same UI runs with no Node process. Closing the window minimises to the tray;
+quit from the tray menu. See [`src-tauri/README.md`](src-tauri/README.md) for the
+architecture, icon regeneration (`npm run icon`), and the auto-updater signing model.
 
 On first load it asks for your location (or defaults to New York). You can also
 type a lat/lon/altitude in the panel.
@@ -78,15 +105,16 @@ type a lat/lon/altitude in the panel.
 
 | Layer       | Source        | How                                                    |
 |-------------|---------------|--------------------------------------------------------|
-| Aircraft    | OpenSky Network | Live state vectors near you, polled every ~12 s, dead-reckoned between polls for smooth motion |
+| Aircraft    | adsb.lol (adsb.fi fallback) | Live ADS-B near you, polled every ~4 s, dead-reckoned between polls for smooth motion |
 | Flight info | adsbdb        | Callsign → route, ICAO24 → aircraft type (enriched on demand, cached) |
 | Satellites  | CelesTrak     | TLEs propagated locally with SGP4 (`satellite.js`)      |
 | Planets/Sun/Moon | (none)   | Computed locally from ephemerides (`astronomy-engine`) |
 | Stars       | HYG catalogue | Public-domain; baked once into `public/data/stars.json` via `scripts/build-stars.mjs` |
 
-A tiny Node proxy (`server/index.js`) fetches and **caches** OpenSky, CelesTrak,
-and adsbdb to dodge CORS and rate limits. Optional: set `OPENSKY_USER` /
-`OPENSKY_PASS` (a free OpenSky account) for higher aircraft rate limits.
+The proxy fetches and **caches** these upstreams to dodge CORS and rate limits. The web
+build uses a tiny Node proxy (`server/index.js`); the Windows app uses an equivalent
+native Rust proxy (`src-tauri/src/proxy/`) — same routes, units, and cache windows, all
+free and no-key.
 
 ### Rebuilding the star catalogue
 
@@ -112,8 +140,10 @@ that radius is a display choice, not a claim about scale.
 ## Project layout
 
 ```
-server/index.js          proxy + static host (ADS-B, CelesTrak, weather, ATC, caching)
-public/index.html        page + import map (CDN: three, satellite.js, astronomy-engine)
+server/index.js          web proxy + static host (ADS-B, CelesTrak, weather, ATC, caching)
+src-tauri/               native Windows app: Tauri shell + Rust proxy (mirrors server/index.js)
+public/vendor/           locally-vendored libs (three, satellite.js, astronomy-engine) — offline
+public/index.html        page + import map (local vendor paths, no CDN)
 public/js/coords.js      geodetic <-> az/alt <-> dome geometry
 public/js/sky.js         horizon, cardinal markers, alt/az grid, twilight backdrop
 public/js/stars.js       HYG star field + the Milky Way

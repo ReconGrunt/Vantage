@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LivelySky — Airspace &amp; Sky Situational Awareness</title>
+  <title>Vantage · Air — Airspace &amp; Sky Situational Awareness</title>
   <link rel="stylesheet" href="css/style.css" />
   <link rel="stylesheet" href="css/radar.css" />
   <script type="importmap">
   {
     "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
-      "satellite.js": "https://cdn.jsdelivr.net/npm/satellite.js@5.0.0/+esm",
-      "astronomy-engine": "https://cdn.jsdelivr.net/npm/astronomy-engine@2.1.19/+esm"
+      "three": "./vendor/three/three.module.js",
+      "three/addons/": "./vendor/three/addons/",
+      "satellite.js": "./vendor/satellite.js",
+      "astronomy-engine": "./vendor/astronomy-engine.js"
     }
   }
   </script>
@@ -42,8 +42,8 @@
       <div class="brand">
         <span class="brand-mark"></span>
         <div class="brand-txt">
-          <h1>LIVELYSKY</h1>
-          <span class="brand-sub">Sky Situational Awareness</span>
+          <h1>VANTAGE</h1>
+          <span class="brand-sub">Air Domain · Situational Awareness</span>
         </div>
       </div>
       <button type="button" id="collapse" title="Collapse">⟨⟩</button>

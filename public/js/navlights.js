@@ -171,7 +171,7 @@ function hash(s) {
 
 function navMaterial() {
   return new THREE.ShaderMaterial({
-    uniforms: { uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) } },
+    uniforms: { uPixelRatio: { value: Math.min(window.devicePixelRatio, 1.5) } },
     vertexShader: `
       attribute float size; varying vec3 vColor;
       uniform float uPixelRatio;

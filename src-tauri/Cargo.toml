@@ -1,0 +1,37 @@
+[package]
+name = "vantage"
+version = "0.1.0"
+description = "Vantage - all-domain situational awareness (Air/Sky domain)"
+authors = ["ReconGrunt"]
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# --- desktop shell ---
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-window-state = "2"
+tauri-plugin-updater = "2"
+
+# --- embedded proxy (mirrors server/index.js) ---
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
+axum = { version = "0.8", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "stream", "gzip"] }
+moka = { version = "0.12", features = ["future"] }
+rust-embed = { version = "8", features = ["mime-guess"] }
+mime_guess = "2"
+bytes = "1"
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+# Resource-light: optimise for size + strip symbols so the shipped binary stays small.
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

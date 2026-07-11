@@ -22,7 +22,7 @@ export class FlightBoard {
 
     const head = `
       <div class="fb-titlebar">
-        <span class="fb-brand">LIVELYSKY · OVERHEAD MANIFEST</span>
+        <span class="fb-brand">VANTAGE · OVERHEAD MANIFEST</span>
         <span class="fb-clock">${time} UTC</span>
       </div>
       <div class="fb-colhead">

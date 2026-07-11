@@ -61,7 +61,11 @@ const now = () => new Date();
 // --- renderer ---
 const canvas = document.getElementById('view');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));  // cap DPR for resource-light rendering
+// Render/poll gate: true while the window is visible; flipped false when the window is
+// hidden/minimised so the rAF loop detaches (idle GPU) and data polls suspend. Driven by
+// document.visibilitychange + the native shell via window.__vantageActive (see render loop).
+let renderActive = true;
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
@@ -582,8 +586,8 @@ async function initData() {
   ui.status('Live');
 }
 initData();
-setInterval(refreshAircraft, 4_000); // near real-time; dead-reckoned between polls
-setInterval(refreshWeather, 10 * 60_000);
+setInterval(() => { if (renderActive) refreshAircraft(); }, 4_000); // near real-time; suspended while hidden
+setInterval(() => { if (renderActive) refreshWeather(); }, 10 * 60_000);
 // Refresh TLEs periodically so a 24/7 kiosk/projector keeps fresh orbital
 // elements: SGP4 accuracy degrades as the TLE epoch ages (drift grows over a
 // day+), and the dome may run for days. The server caches TLEs for 6h, so this
@@ -617,8 +621,9 @@ function renderIss() {
   }
 }
 refreshIss();
-setInterval(refreshIss, 12_000);
+setInterval(() => { if (renderActive) refreshIss(); }, 12_000);
 setInterval(() => {
+  if (!renderActive) return;
   flightBoard.tick();
   renderIss();
   // live distress box: any in-range aircraft squawking an emergency (7500/7600/7700)
@@ -629,7 +634,7 @@ setInterval(() => {
 
 // --- render loop ---
 let lastPick = 0, lastPump = 0, lastBoard = 0, lastTick = 0;
-renderer.setAnimationLoop((t) => {
+const frame = (t) => {
   const d = now();
   const elapsed = t * 0.001;
   atc.sampleVoice();   // ATC voice-activity → "transmitting" indicator (runs in every mode)
@@ -736,7 +741,20 @@ renderer.setAnimationLoop((t) => {
     renderer.render(scene, camera);
   }
   ui.tick(d);
-});
+};
+renderer.setAnimationLoop(frame);
+
+// Detach the render loop entirely when the window is hidden/minimised (idle GPU/CPU) and
+// resume with an immediate data refresh. visibilitychange covers browser/occlusion; the native
+// Tauri shell calls window.__vantageActive(false/true) on minimise/restore.
+function setRenderActive(on) {
+  if (on === renderActive) return;
+  renderActive = on;
+  renderer.setAnimationLoop(on ? frame : null);   // detaching stops rAF → idle GPU
+  if (on) { refreshAircraft(); refreshWeather(); }
+}
+window.__vantageActive = setRenderActive;
+document.addEventListener('visibilitychange', () => setRenderActive(!document.hidden));
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;

@@ -1,4 +1,6 @@
-// LivelySky — local proxy + static server.
+// Vantage · Air — local proxy + static server (web / dev build). The desktop app
+// reimplements this same /api contract natively in Rust (see src-tauri/); keep the two in
+// sync via scripts/contract-smoke.mjs.
 //
 // Why a proxy at all? Two reasons:
 //   1. CORS — most of these upstreams don't reliably send CORS headers, so the
@@ -58,7 +60,7 @@ const ADSB_SOURCES = [
   (lat, lon, nm) => `https://api.adsb.lol/v2/lat/${lat}/lon/${lon}/dist/${nm}`,
   (lat, lon, nm) => `https://opendata.adsb.fi/api/v2/lat/${lat}/lon/${lon}/dist/${nm}`,
 ];
-const ADSB_UA = { 'User-Agent': 'LivelySky/1.0 (live planetarium dome; github.com/ReconGrunt/LivelySky)' };
+const ADSB_UA = { 'User-Agent': 'Vantage/0.1 (all-domain situational awareness; github.com/ReconGrunt/vantage)' };
 
 // One readsb aircraft record -> our named, unit-normalised object (metres, m/s).
 function mapAdsbRecord(a) {
@@ -365,7 +367,7 @@ const TILE_PROVIDERS = {
   sat: (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`,
   terrain: (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/${z}/${y}/${x}`,
 };
-const TILE_UA = { 'User-Agent': 'LivelySky/1.0 (tactical radar basemap; github.com/ReconGrunt/LivelySky)' };
+const TILE_UA = { 'User-Agent': 'Vantage/0.1 (tactical radar basemap; github.com/ReconGrunt/vantage)' };
 // Separate from the generic JSON `cache` above: tile values are binary buffers, keyed
 // over a practically unbounded (z,x,y) space (a browsable world map), so this cache is
 // capacity-bounded (evict oldest — Map preserves insertion order) rather than time-swept.
@@ -411,7 +413,9 @@ app.use(express.static(path.join(__dirname, '..', 'public'), {
   setHeaders: (res) => res.setHeader('Cache-Control', 'no-store'),
 }));
 
-app.listen(PORT, () => {
-  console.log(`\n  LivelySky running:  http://localhost:${PORT}`);
+const server = app.listen(PORT, '127.0.0.1', () => {
+  console.log(`\n  Vantage · Air (web) running:  http://127.0.0.1:${PORT}`);
   console.log('  Aircraft: adsb.lol (adsb.fi fallback) — free, no key.\n');
 });
+// Graceful shutdown so Ctrl-C / a supervising process closes the listener cleanly.
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => server.close(() => process.exit(0)));

@@ -1,16 +1,24 @@
 {
-  "name": "livelysky",
+  "name": "vantage-web",
   "version": "0.1.0",
-  "description": "LivelySky — a live planetarium dome: real aircraft, satellites, planets, weather and stars projected at their true sky positions.",
+  "description": "Vantage · Air — all-domain situational awareness (Air/Sky domain): real aircraft, satellites, planets, weather and stars at their true sky positions. This package is the web/dev backend; the native Windows app lives in src-tauri/.",
   "type": "module",
   "scripts": {
     "start": "node server/index.js",
-    "dev": "node --watch server/index.js"
+    "dev": "node --watch server/index.js",
+    "icon": "node scripts/gen-icon.mjs && tauri icon src-tauri/assets/vantage.png",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "smoke": "node scripts/contract-smoke.mjs"
   },
   "dependencies": {
     "express": "^4.19.2"
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4"
   }
 }
