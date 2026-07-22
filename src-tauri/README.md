@@ -78,5 +78,5 @@ Edit `scripts/gen-icon.mjs` to change the mark, then re-run.
 - `bundle.identifier` = `com.vantage.desktop`; product name = **Vantage**.
 - `target/` and `gen/schemas/` are git-ignored.
 - macOS/Linux packaging is a later step (Tauri supports both; this is Windows-first).
-- The GitHub repo rename `ReconGrunt/LivelySky → …/vantage` is a manual step; update the
-  UA/updater URLs afterward.
+- The GitHub repo lives at `ReconGrunt/Vantage`; the updater endpoint and User-Agent
+  strings point there (GitHub resolves the path case-insensitively).

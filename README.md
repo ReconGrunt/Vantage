@@ -154,7 +154,11 @@ public/js/aircraft.js    live planes (ADS-B) + dead reckoning + ceiling low-flyo
 public/js/clouds.js      live-weather cloud decks
 public/js/fisheye.js     180° fisheye dome-master projection
 public/js/ceiling-brush.js  paint-to-reveal custom ceiling-shape mask
-public/js/ui.js          layer toggles, location, clock, info panel
+public/js/radar.js       tactical top-down PPI scope (tracks, rings, sweep, track list)
+public/js/atc.js         live ATC audio (LiveATC) — single-stream resolver + voice activity
+public/js/towers.js      nearby ATC facilities placed on the horizon
+public/js/dashboard.js   "Arrange" mode — drag/resize widgets per view
+public/js/ui.js          the ONE command menu: view switcher + per-view sections, location, clock, info
 public/js/main.js        scene, camera, controls, render loop, WebXR
 ```
 
@@ -162,17 +166,43 @@ public/js/main.js        scene, camera, controls, render loop, WebXR
 
 - **Service colour-coding** — 🔵 blue = law enforcement, 🟢 green = military, 🔴 red = EMS/fire, white = civilian. Classified from the adsbdb operator/owner/route plus the US-military ICAO24 hex range (see `public/js/classify.js`).
 - **Helicopters** render as a helicopter model (rotor, tail boom, skids), not an airliner.
-- **Status-driven nav lights** (`public/js/navlights.js`) — steady red (left) / green (right) / white (tail) position lights, a flashing **red anti-collision beacon**, white wingtip **strobes**, and **landing lights** that switch on only at low altitude (approach/departure), just like the real procedure. Toggle under **Graphics → Aircraft nav lights**.
+- **Status-driven nav lights** (`public/js/navlights.js`) — steady red (left) / green (right) / white (tail) position lights, a flashing **red anti-collision beacon**, white wingtip **strobes**, and **landing lights** that switch on only at low altitude (approach/departure), just like the real procedure. On by default.
 
-## Display / projection modes
+## Situational-awareness tools
 
-Pick under **Display / Projection** in the panel, or via URL for kiosk auto-launch:
+- **Tactical radar (top-down)** — a flat geographic scope (Web Mercator, pan/zoom,
+  optional free satellite/terrain basemap), your position centred, live aircraft plotted
+  at their true lat/lon with range rings, a rotating sweep, MIL-STD-2525-flavoured
+  affiliation tracks, and a live track list + per-track detail. The status strip reports
+  **honest ADS-B link health** — no classification theatre.
+- **Live ATC audio** — the facility (tower/approach) an overhead or hovered aircraft is
+  working, streamed free from LiveATC.net and proxied same-origin. One voice at a time
+  (hovered › kept › auto-overhead) with an "on air" indicator from a WebAudio
+  voice-activity detector. **Comms follow you** — change your location and out-of-range
+  feeds drop, so you always hear the sky above where you actually are.
+- **Distress + air-incident log** — aircraft squawking 7500 (hijack), 7600 (radio fail)
+  or 7700 (emergency) surface in a distress panel (shown in every view) and are
+  self-logged into a per-UTC-day incident list, since no free public air-incident feed
+  exists.
+- **Arrange mode** — drag / resize / show-hide any on-screen widget on a snap grid, saved
+  per view (hit **Arrange layout**, or press **E**).
 
-| Mode | Use | URL |
+## One command menu, every view
+
+Vantage drives every view from a **single command menu** — one tactical panel
+(top-left) with a **View** switcher on top and sections that adapt to the view you
+pick. Shared controls (aircraft **service filter**, **ATC**, the **air-incident log**,
+your **location**) stay one click away everywhere; view-specific controls appear only
+where they apply — dome layers / star labels / projection tuning / ceiling-shape paint
+in the projector views, and range rings / basemap / sweep in radar. Pick a view in the
+panel, or via URL for kiosk auto-launch:
+
+| View | Use | URL |
 |------|-----|-----|
+| Ceiling skylight | Projector roughly above the viewer; a round window of overhead sky, zenith-centred — correct for a **flat** roof | `?display=ceiling` |
+| Fisheye dome 180° | **True dome master** — projector straight up at a flat ceiling; zenith = centre, horizon = disc edge (correct on a curved planetarium dome) | `?display=fisheye` |
 | Free look | A normal screen — drag to look around | `?display=free` |
-| Overhead (ceiling) | Projector roughly above the viewer; zenith-centred perspective | `?display=ceiling` |
-| Fisheye dome 180° | **True dome master** — projector pointed straight up at a flat ceiling; zenith = centre, horizon = disc edge | `?display=fisheye` |
+| Tactical radar | Top-down geographic PPI scope: ownship centred, North up, live tracks by real lat/lon, range rings, sweep, MIL-STD-2525 tracks + track list | `?display=radar` |
 
 - **North at top** slider aligns the projection to your room (`&north=90`).
 - **Fullscreen / kiosk** hides the UI; add `&kiosk` to the URL to start hidden.
