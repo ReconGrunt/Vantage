@@ -27,7 +27,16 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // --- tiny in-memory cache ---------------------------------------------------
-const cache = new Map(); // key -> { expires, data }
+// key -> { expires, data }. Capacity-bounded (evict oldest — Map preserves
+// insertion order) rather than time-swept: expired entries are intentionally
+// kept so the serve-stale fallbacks below can hand back last-known data when an
+// upstream is down. Active keys are re-inserted on every refresh (setCached
+// deletes-then-sets), so they stay "newest" and only genuinely idle keys (a
+// flight seen once and never again) age out. Mirrors the Rust backend's moka
+// max_capacity bound so a 24/7 kiosk — or an attacker spraying random
+// ?callsign= values at /api/flightinfo — can't grow the Map without limit.
+const cache = new Map();
+const CACHE_MAX = 10_000;
 
 function getCached(key) {
   const hit = cache.get(key);
@@ -35,16 +44,21 @@ function getCached(key) {
   return null;
 }
 function setCached(key, data, ttlMs) {
+  cache.delete(key); // re-insert at the end so eviction removes the oldest first
   cache.set(key, { data, expires: Date.now() + ttlMs });
+  if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
 }
 
-async function fetchJson(url, opts) {
-  const res = await fetch(url, opts);
+// Default every upstream call to an 8 s total timeout (matching the Rust proxy's
+// shared client) so a stalled CelesTrak/Open-Meteo/adsbdb connection fails fast
+// into the serve-stale path instead of hanging on undici's ~5 min default.
+async function fetchJson(url, opts = {}) {
+  const res = await fetch(url, { signal: AbortSignal.timeout(8000), ...opts });
   if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url}`);
   return res.json();
 }
-async function fetchText(url, opts) {
-  const res = await fetch(url, opts);
+async function fetchText(url, opts = {}) {
+  const res = await fetch(url, { signal: AbortSignal.timeout(8000), ...opts });
   if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url}`);
   return res.text();
 }
@@ -225,6 +239,14 @@ app.get('/api/flightinfo', async (req, res) => {
   res.json(out);
 });
 
+// Parse a possibly-string coordinate to a number, treating null/''/non-numeric
+// as null (matches the Rust proxy's to_num, avoids Number('') === 0).
+function numOrNull(v) {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 function pickAirport(a) {
   if (!a) return null;
   return {
@@ -233,8 +255,10 @@ function pickAirport(a) {
     name: a.name || null,
     municipality: a.municipality || null,
     country: a.country_name || null,
-    lat: a.latitude != null ? Number(a.latitude) : null,
-    lon: a.longitude != null ? Number(a.longitude) : null,
+    // Guard empty strings: Number('') is 0 (→ Gulf of Guinea), and the Rust
+    // proxy's to_num() yields null for '' — coerce to null here for parity.
+    lat: numOrNull(a.latitude),
+    lon: numOrNull(a.longitude),
   };
 }
 

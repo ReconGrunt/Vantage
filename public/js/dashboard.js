@@ -31,7 +31,6 @@ const VIEWS = {
   ],
   radar: [
     { id: 'rdr-status',    label: 'Status bar',     minW: 320, minH: 30 },
-    { id: 'rdr-controls',  label: 'Scope controls', minW: 220, minH: 160 },
     { id: 'rdr-tracklist', label: 'Track list',     minW: 280, minH: 120 },
     { id: 'rdr-detail',    label: 'Track detail',   minW: 220, minH: 120, def: [1180, 90, 288, 300] },
     { id: 'rdr-attrib',    label: 'Attribution',    minW: 120, minH: 16,  def: [14, 700, 260, 20] },
@@ -296,15 +295,8 @@ export class DashboardLayout {
       b.addEventListener('click', () => this.toggleEdit(true));
       row.appendChild(b); fs.closest('.btn-row').after(row);
     }
-    const rc = document.getElementById('rdr-controls');
-    if (rc) {
-      const grp = document.createElement('div'); grp.className = 'rdr-grp';
-      grp.innerHTML = '<div class="rdr-grp-h">Layout</div>';
-      const row = document.createElement('div'); row.className = 'rdr-btnrow';
-      const b = document.createElement('button'); b.type = 'button'; b.textContent = '⤢ Arrange';
-      b.addEventListener('click', () => this.toggleEdit(true));
-      row.appendChild(b); grp.appendChild(row); rc.appendChild(grp);
-    }
+    // (The scope's own Arrange button used to be injected into #rdr-controls; that
+    // console is gone — the panel's Arrange button above now covers every view.)
   }
   _wireHotkey() {
     addEventListener('keydown', (e) => {

@@ -34,7 +34,9 @@
   /* type */
   --text: #e6ebef;
   --muted: #8a97a3;
-  --mute-2: #5c6874;
+  /* smallest UI text (hints, sub-labels, clock) uses --mute-2, so it must clear
+     WCAG AA on the near-black canvas: #727e8a is ~4.6:1 on --bg (was #5c6874 ~3.5:1). */
+  --mute-2: #727e8a;
 
   /* accents */
   --accent: #e8552a;   /* selection / attention / alert */
@@ -320,12 +322,13 @@ body.brush-paint #brush-cursor { display: block; }
 .fb-row.fb-law .fb-flight { color: var(--law); }
 .fb-row.fb-mil .fb-flight { color: var(--mil); }
 .fb-row.fb-ems .fb-flight { color: var(--ems); }
-@keyframes fbblink { 0%, 60% { opacity: 1; } 61%, 100% { opacity: 0.45; } }
 body.kiosk #flightboard { left: 16px; }
 
 /* ---- ATC "now tuned" chip ------------------------------------------------------- */
 #atc-chip {
-  position: fixed; right: 16px; bottom: 150px; z-index: 31;
+  /* Sits ABOVE the compass rose (which occupies the bottom ~216px on the right) so
+     the two never overlap; relocated in radar mode (radar.css) clear of the track list. */
+  position: fixed; right: 16px; bottom: 224px; z-index: 31;
   display: flex; align-items: center; gap: 8px;
   padding: 6px 10px; border-radius: 3px;
   background: var(--panel-2); border: 1px solid var(--line-2);
@@ -452,6 +455,13 @@ input[type="range"] { width: 100%; accent-color: var(--live); margin-top: 7px; }
 .unit-btn { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; padding: 6px 0; }
 .unit-btn.active { background: rgba(36, 211, 201, 0.16); border-color: var(--live); color: var(--text); }
 
+/* universal view switcher (2×2) + radar range grid (3×2); reuse .unit-btn styling */
+.view-seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.seg3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 6px; }
+.seg3 .unit-btn { font-variant-numeric: tabular-nums; }
+/* a panel section that doesn't apply to the current view (see ui.js updateModeRows) */
+#panel .view-off { display: none !important; }
+
 .chips { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px; }
 .chips label {
   display: flex; align-items: center; gap: 7px; font-size: 12px;
@@ -468,6 +478,19 @@ body.kiosk #panel { width: 256px; }
 #VRButton { border-radius: 3px !important; transform: translateX(-82px); }
 #ARButton { border-radius: 3px !important; transform: translateX(82px); }
 body.kiosk #VRButton, body.kiosk #ARButton { display: none !important; }
+
+/* ---- narrow viewports: graceful degradation of the fixed overlays --------------- */
+/* The app targets large projector/kiosk screens; these offsets are tuned for width.
+   On a phone / small window a couple of them collapse or ride over the panel, so
+   re-anchor just those to the viewport edges. */
+@media (max-width: 760px) {
+  /* left:334 + right:160 makes the manifest's width go negative under ~500px — it
+     shrinks to an unreadable sliver. Pin it to the viewport edges instead. */
+  #flightboard { left: 12px; right: 12px; max-width: none; }
+  /* the centred 320px distress banner overlaps the top-left panel below ~800px —
+     anchor it top-right, clear of the panel (it stays pointer-events:none). */
+  #distress { left: auto; right: 12px; width: min(320px, calc(100vw - 24px)); transform: none; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   #status::before, #iss-alert.now, #atc-chip.tuning .atc-dot { animation: none; }

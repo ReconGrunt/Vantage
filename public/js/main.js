@@ -47,6 +47,7 @@ const state = {
   display: 'ceiling',  // 'free' | 'ceiling' | 'fisheye' | 'radar' (top-down tactical scope)
   cats: { mil: true, law: true, ems: true, civ: true }, // service filter (all views): uncheck CIV for gov/mil only
   radarRangeNm: 80,    // radar scope range (outer ring), nautical miles
+  basemap: 'none',     // radar basemap: 'none' | 'sat' | 'terrain'
   sweep: true,         // radar rotating sweep
   northDeg: 0,         // orientation of North for ceiling/fisheye projection
   zoom: 1,             // works in every mode (FOV / fisheye disc scale)
@@ -331,6 +332,7 @@ function setObserver(obs) {
   refreshAircraft();
   refreshWeather();
   rebuildTowers();
+  atc.setObserver(obs.lat, obs.lon); // drop ATC feeds from the old location so comms follow you
 }
 
 // The radar's own Range control also drives the actual ADS-B fetch radius (rangeKm),
@@ -364,8 +366,6 @@ const ui = initUI({
     if (name === 'stars') layers.stars.setLabels(on);
   },
   onBloomToggle: (on) => { state.bloom = on; },
-  onAtcToggle: (on) => { state.atc = on; atc.setEnabled(on); },
-  onNavToggle: (on) => { state.navlights = on; navLights.setVisible(on); },
   onWeatherToggle: (on) => { state.weather = on; clouds.setVisible(on && !state.skyOnly); },
   onPathToggle: (on) => { state.showPath = on; if (!on) layers.aircraft.hidePath(); },
   onGroundToggle: (on) => setGround(on),
@@ -375,6 +375,12 @@ const ui = initUI({
   // this filter calls the SAME callback, and the dome aircraft layer hides filtered
   // categories (see aircraft.js) — a single source of truth either way.
   onCatFilter: (cats) => { state.cats = cats; layers.aircraft.setCatFilter(cats); },
+  // radar (tactical scope) controls, now part of the one unified command panel:
+  onRadarRange: (nm) => setRadarRange(nm),
+  onBasemap: (bm) => { state.basemap = bm; radar.setBasemap(bm); },
+  onSweep: (on) => { state.sweep = on; radar.setSweep(on); },
+  onRecenter: () => radar.recenter(),
+  onPickToggle: () => radar.togglePickMode(),
   onNorthChange: (deg) => { state.northDeg = ((deg % 360) + 360) % 360; },
   onZoom: (z) => {
     // Ceiling FOV is capped, so zoom < 1 does nothing there — floor it so the slider isn't dead.
@@ -454,9 +460,11 @@ const radar = new RadarRenderer(document.getElementById('radar'), {
   onRangeChange: setRadarRange,
   onCatFilter: (cats) => { state.cats = cats; layers.aircraft.setCatFilter(cats); },
   onDisplayChange: changeDisplay,
+  onPickModeChange: () => ui.resetPick(),  // map-pick finished → reset the panel's Pick button
 });
 radar.setRange(state.radarRangeNm);
 radar.setSweep(state.sweep);
+radar.setBasemap(state.basemap);
 
 // Operator "Arrange" mode: drag / resize / show-hide every widget on a snap grid, PER
 // view, saved to localStorage. Self-contained (builds its own edit overlay + palette);
@@ -644,6 +652,11 @@ const frame = (t) => {
   // whole celestial/cloud/lighting pipeline and the WebGL scene render — cheap.
   if (state.display === 'radar') {
     layers.aircraft.ceilingMode = false;
+    // Keep the Sun solved (it's ~1 Hz-throttled internally, so cheap) even though the
+    // dome isn't drawn: refreshIss() reads planets.sunAltitude to decide whether an ISS
+    // pass is dark enough to see. Skipping it here left sunAltitude pinned at its -90
+    // init, so every pass was wrongly flagged "visible" in daylight.
+    layers.planets.update(state.observer, d);
     // Update unconditionally so entry.render (smoothed lat/lon) never freezes; the radar
     // hides tracks itself when the Aircraft layer is toggled off (see radar._collect).
     layers.aircraft.update(state.observer, t);

@@ -1,6 +1,6 @@
 // ui.js — overlay panel: layer toggles, observer location, clock, object info.
 
-export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, onBloomToggle, onAtcToggle, onNavToggle, onWeatherToggle, onGroundToggle, onPathToggle, onLabelFields, onDisplayChange, onNorthChange, onZoom, onSkySpan, onSkyOnly, onGuidesToggle, onBoardToggle, onAutoNorth, onCalibration, onRange, onSatGroupChange, onCatFilter }) {
+export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, onBloomToggle, onWeatherToggle, onGroundToggle, onPathToggle, onLabelFields, onDisplayChange, onNorthChange, onZoom, onSkySpan, onSkyOnly, onGuidesToggle, onBoardToggle, onAutoNorth, onCalibration, onRange, onSatGroupChange, onCatFilter, onBasemap, onRadarRange, onSweep, onRecenter, onPickToggle }) {
   const $ = (id) => document.getElementById(id);
 
   // layer toggles
@@ -56,16 +56,69 @@ export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, 
     });
   }
 
-  // display / projection
+  // display / projection — ONE menu across all views. The #view-switch button row (top
+  // of the panel) is the single view control; #display-mode stays as the canonical value
+  // for compatibility. Each panel <section data-view> is shown only in the views it
+  // applies to ("all" | "dome" = ceiling/fisheye/free | "radar").
   const displayEl = $('display-mode');
   displayEl.value = state.display;
+  const viewBtns = [...document.querySelectorAll('#view-switch [data-mode]')];
+  const isDome = (m) => m === 'ceiling' || m === 'fisheye' || m === 'free';
+
   function updateModeRows() {
-    // the "Visible sky" span only applies to the ceiling perspective view (radar mode
-    // hides the whole dome panel in CSS, so no radar-specific row toggling is needed here)
-    $('skyspan-row').style.display = displayEl.value === 'ceiling' ? '' : 'none';
+    const m = displayEl.value;
+    const dome = isDome(m);
+    // Section-level: reveal only the sections that apply to this view. Use a class (not
+    // inline display) so it composes with the kiosk-slim rule instead of overriding it.
+    for (const sec of document.querySelectorAll('#panel [data-view]')) {
+      const v = sec.dataset.view;
+      const show = v === 'all' || (v === 'dome' && dome) || (v === 'radar' && !dome);
+      sec.classList.toggle('view-off', !show);
+    }
+    for (const b of viewBtns) b.classList.toggle('active', b.dataset.mode === m);
+    // Dome sub-mode rows within the Display / Projection section:
+    //   · "Visible sky" span → ceiling only · Ceiling alignment → fisheye only
+    //   · Ceiling-shape paint → any projector mode (ceiling or fisheye)
+    const projector = m === 'ceiling' || m === 'fisheye';
+    $('skyspan-row').style.display = m === 'ceiling' ? '' : 'none';
+    const calib = $('calib'); if (calib) calib.style.display = m === 'fisheye' ? '' : 'none';
+    const ceilshape = $('ceilshape'); if (ceilshape) ceilshape.style.display = projector ? '' : 'none';
   }
+  function selectView(m) {
+    displayEl.value = m;
+    onDisplayChange(m);
+    updateModeRows();
+  }
+  for (const b of viewBtns) b.addEventListener('click', () => selectView(b.dataset.mode));
   updateModeRows();
   displayEl.addEventListener('change', () => { onDisplayChange(displayEl.value); updateModeRows(); });
+
+  // --- radar (tactical scope) controls: drive the RadarRenderer via callbacks ---
+  const rangeSeg = $('rdr-range-seg');
+  if (rangeSeg) {
+    const syncRange = (nm) => { for (const b of rangeSeg.querySelectorAll('[data-nm]')) b.classList.toggle('active', parseInt(b.dataset.nm, 10) === nm); };
+    syncRange(state.radarRangeNm);
+    rangeSeg.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-nm]'); if (!btn) return;
+      const nm = parseInt(btn.dataset.nm, 10);
+      syncRange(nm); onRadarRange?.(nm);
+    });
+  }
+  const bmSeg = $('rdr-basemap-seg');
+  if (bmSeg) {
+    const syncBm = (bm) => { for (const b of bmSeg.querySelectorAll('[data-bm]')) b.classList.toggle('active', b.dataset.bm === bm); };
+    syncBm(state.basemap || 'none');
+    bmSeg.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-bm]'); if (!btn) return;
+      syncBm(btn.dataset.bm); onBasemap?.(btn.dataset.bm);
+    });
+  }
+  const sweepCb = $('rdr-sweep-cb');
+  if (sweepCb) { sweepCb.checked = state.sweep !== false; sweepCb.addEventListener('change', () => onSweep?.(sweepCb.checked)); }
+  $('rdr-recenter-btn')?.addEventListener('click', () => onRecenter?.());
+  const pickBtn = $('rdr-pick-btn');
+  const setPick = (on) => { if (!pickBtn) return; pickBtn.classList.toggle('active', !!on); pickBtn.textContent = on ? 'Click the map to set…' : 'Pick location on map'; };
+  pickBtn?.addEventListener('click', () => setPick(onPickToggle?.()));
 
   // ceiling "visible sky" span (how wide a cone of sky fills the disc)
   const spanEl = $('skyspan');
@@ -167,6 +220,10 @@ export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, 
   }, { passive: false });
   window.addEventListener('keydown', (e) => {
     if (!compassEditable) return;
+    // Don't hijack the arrow keys while the user is typing in a field (e.g. editing
+    // lat/lon) — only nudge the compass when focus isn't in an input control.
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     if (e.key === 'ArrowLeft') applyBearing((compassBearing + 359) % 360);
     if (e.key === 'ArrowRight') applyBearing((compassBearing + 1) % 360);
   });
@@ -307,9 +364,11 @@ export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, 
     status,
     renderDistress, logIncident, renderIncidents,
     setObserver: fillLoc,
-    // Reflect a programmatic display-mode change (e.g. kiosk ?display=) into the select
-    // AND the per-mode control rows, since setting .value doesn't fire 'change'.
+    // Reflect a programmatic display-mode change (e.g. kiosk ?display=) into the select,
+    // the view-switch buttons, AND the per-view section visibility.
     setDisplayMode(m) { displayEl.value = m; updateModeRows(); },
+    // Called when the radar map-pick completes so the panel button resets its label.
+    resetPick() { setPick(false); },
     setNorth(v) { showNorth(v); },
     setZoom(z) { zoomEl.value = z; zoomVal.textContent = `${(+z).toFixed(1)}×`; },
     setBearing(deg, editable) {

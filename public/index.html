@@ -46,7 +46,7 @@
           <span class="brand-sub">Air Domain · Situational Awareness</span>
         </div>
       </div>
-      <button type="button" id="collapse" title="Collapse">⟨⟩</button>
+      <button type="button" id="collapse" title="Collapse" aria-label="Collapse panel">⟨⟩</button>
     </div>
 
     <div class="panel-body">
@@ -55,7 +55,20 @@
         <span id="clock" class="clock"></span>
       </div>
 
-      <section>
+      <!-- Universal view switcher: one menu drives every view. Sections below carry a
+           data-view attribute ("all" | "dome" | "radar") and ui.js shows only the ones
+           that apply to the selected view. -->
+      <section data-view="all">
+        <h2>View</h2>
+        <div class="view-seg" id="view-switch">
+          <button type="button" class="unit-btn" data-mode="ceiling">Ceiling</button>
+          <button type="button" class="unit-btn" data-mode="fisheye">Fisheye</button>
+          <button type="button" class="unit-btn" data-mode="free">Free look</button>
+          <button type="button" class="unit-btn" data-mode="radar">Radar</button>
+        </div>
+      </section>
+
+      <section data-view="dome">
         <h2>Layers</h2>
         <label class="row"><input type="checkbox" id="toggle-aircraft" /> Aircraft
           <span class="count" id="count-aircraft">0</span></label>
@@ -78,7 +91,7 @@
         </label>
       </section>
 
-      <section>
+      <section data-view="all">
         <h2>Aircraft filter <span class="count">service</span></h2>
         <div class="chips">
           <label><input type="checkbox" data-cat="mil" checked /> Military</label>
@@ -89,7 +102,33 @@
         <p class="hint">Show/hide aircraft by service. Uncheck Civilian for a government/military-only picture — applies to every view (dome and radar).</p>
       </section>
 
-      <section>
+      <!-- Radar-only controls (shown only when View = Radar). Drives the tactical scope. -->
+      <section data-view="radar">
+        <h2>Tactical scope</h2>
+        <label class="row sub">Range · outer ring (NM)</label>
+        <div class="seg3" id="rdr-range-seg">
+          <button type="button" class="unit-btn" data-nm="10">10</button>
+          <button type="button" class="unit-btn" data-nm="20">20</button>
+          <button type="button" class="unit-btn" data-nm="40">40</button>
+          <button type="button" class="unit-btn" data-nm="80">80</button>
+          <button type="button" class="unit-btn" data-nm="150">150</button>
+          <button type="button" class="unit-btn" data-nm="250">250</button>
+        </div>
+        <label class="row sub">Basemap</label>
+        <div class="btn-row" id="rdr-basemap-seg">
+          <button type="button" class="unit-btn" data-bm="none">None</button>
+          <button type="button" class="unit-btn" data-bm="sat">Satellite</button>
+          <button type="button" class="unit-btn" data-bm="terrain">Terrain</button>
+        </div>
+        <label class="row"><input type="checkbox" id="rdr-sweep-cb" checked /> Radar sweep</label>
+        <div class="btn-row">
+          <button type="button" id="rdr-recenter-btn">Recentre</button>
+          <button type="button" id="rdr-pick-btn">Pick location on map</button>
+        </div>
+        <p class="hint">Top-down geographic scope: ownship centred, North up, live tracks by true lat/lon. Pick a range ring, add a satellite/terrain basemap, or click the map to reposition.</p>
+      </section>
+
+      <section data-view="dome">
         <h2>Aircraft range</h2>
         <label class="row sub">Distance
           <input type="range" id="range" min="25" max="600" step="5" value="250" />
@@ -101,13 +140,13 @@
         </div>
       </section>
 
-      <section>
+      <section data-view="dome">
         <h2>Labels</h2>
         <label class="row"><input type="checkbox" id="label-aircraft" /> Flight info (type · route)</label>
         <label class="row"><input type="checkbox" id="label-stars" /> Bright star names</label>
       </section>
 
-      <section>
+      <section data-view="dome">
         <h2>Graphics</h2>
         <label class="row"><input type="checkbox" id="toggle-path" /> Flight path (selected plane)</label>
         <label class="row"><input type="checkbox" id="toggle-weather" /> Live weather / clouds</label>
@@ -116,13 +155,13 @@
           <span class="count" title="May flicker on some GPUs">beta</span></label>
       </section>
 
-      <section>
+      <section data-view="all">
         <h2>ATC towers <span class="count">horizon</span></h2>
         <p class="hint">Facilities near you appear on the horizon. Hover one to listen; tick to keep one. One voice at a time — the most-recent selection is audible (hover &gt; kept &gt; auto-overhead). Source: LiveATC.net.</p>
         <div id="tower-list" class="tower-list"><span class="hint">— none in range —</span></div>
       </section>
 
-      <section>
+      <section data-view="all">
         <h2>Air incidents <span class="count" id="incident-count">today</span></h2>
         <div class="btn-row" id="incident-window">
           <button type="button" class="unit-btn" data-win="15">15m</button>
@@ -133,7 +172,7 @@
         <p class="hint">Emergency squawks (7500 hijack · 7700 emergency · 7600 radio fail) seen since launch, this UTC day. Self-logged from the live feed — no free public air-incident database exists.</p>
       </section>
 
-      <section>
+      <section data-view="dome">
         <h2>Label fields <span class="count">aircraft</span></h2>
         <div class="chips">
           <label><input type="checkbox" data-field="route" /> Route</label>
@@ -148,9 +187,11 @@
         <p class="hint">Callsign always shown. Turn on “Flight info” under Labels to display them.</p>
       </section>
 
-      <section class="kiosk-keep">
+      <section class="kiosk-keep" data-view="dome">
         <h2>Display / Projection</h2>
-        <label class="row sub">Mode
+        <!-- Kept as the canonical mode value for ui.js; the visible switcher is the
+             #view-switch button row at the top of the panel. -->
+        <label class="row sub" hidden>Mode
           <select id="display-mode">
             <option value="ceiling" selected>Ceiling skylight (flat roof)</option>
             <option value="fisheye">Fisheye dome 180° (planetarium dome)</option>
@@ -158,7 +199,6 @@
             <option value="radar">Tactical radar (top-down)</option>
           </select>
         </label>
-        <p class="hint">The tactical radar view (top-down map) has its own dedicated controls — location, range, basemap — once selected.</p>
         <label class="row sub" id="skyspan-row">Visible sky
           <input type="range" id="skyspan" min="50" max="100" step="1" value="100" />
           <span class="count" id="skyspan-val">100°</span>
@@ -226,7 +266,7 @@
         <p class="hint">Point the projector straight up at the ceiling and lie beneath it. <b>Ceiling skylight</b> is the correct projection for a <i>flat</i> roof — a round window of overhead sky, just as if you were looking up through it (the zenith sits at centre). <b>Fisheye dome</b> is only correct on a curved planetarium dome. Use “Visible sky” to widen the window and the compass to spin North to your room.</p>
       </section>
 
-      <section>
+      <section data-view="all">
         <h2>Your location</h2>
         <form id="loc-form">
           <div class="loc-grid">
@@ -254,8 +294,8 @@
   <div id="atc-chip" hidden>
     <span class="atc-dot"></span>
     <span id="atc-name">ATC</span>
-    <input type="range" id="atc-vol" min="0" max="1" step="0.05" value="0.8" title="Volume" />
-    <button type="button" id="atc-stop" title="Stop">■</button>
+    <input type="range" id="atc-vol" min="0" max="1" step="0.05" value="0.8" title="Volume" aria-label="ATC volume" />
+    <button type="button" id="atc-stop" title="Stop" aria-label="Stop ATC audio">■</button>
   </div>
 
   <!-- Emergency / distress panel: aircraft squawking 7500/7600/7700 in range. Shown in
@@ -274,8 +314,8 @@
     <svg id="compass-ring" viewBox="-100 -100 200 200" width="118" height="118"></svg>
     <div id="compass-needle"></div>
     <div id="compass-read">0° N</div>
-    <button type="button" id="compass-minus" title="-1°">‹</button>
-    <button type="button" id="compass-plus" title="+1°">›</button>
+    <button type="button" id="compass-minus" title="-1°" aria-label="Rotate orientation -1 degree">‹</button>
+    <button type="button" id="compass-plus" title="+1°" aria-label="Rotate orientation +1 degree">›</button>
   </div>
 
   <pre id="errlog"></pre>

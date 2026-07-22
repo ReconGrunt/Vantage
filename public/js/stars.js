@@ -179,14 +179,18 @@ export class StarLayer {
     const theta = lstDeg * DEG;
 
     const cf = Math.cos(phi), sf = Math.sin(phi);
+    // Reuse scratch matrices (this runs every frame stars are visible) — no per-frame
+    // Matrix4 allocations feeding the GC on a 24/7 display.
+    const mLat = this._mLat || (this._mLat = new THREE.Matrix4());
+    const rz = this._rz || (this._rz = new THREE.Matrix4());
     // M_lat (rows): maps hour-angle frame -> world (East=+X, Up=+Y, North=-Z)
-    const mLat = new THREE.Matrix4().set(
+    mLat.set(
       0, 1, 0, 0,
       cf, 0, sf, 0,
       sf, 0, -cf, 0,
       0, 0, 0, 1,
     );
-    const rz = new THREE.Matrix4().makeRotationZ(-theta);
+    rz.makeRotationZ(-theta);
     this.group.matrix.multiplyMatrices(mLat, rz);
     this.group.matrixWorldNeedsUpdate = true;
     this.labelGroup.matrixWorldNeedsUpdate = true;

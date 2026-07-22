@@ -51,15 +51,21 @@ export function lookAngles(obs, target) {
   return { azimuth: az, altitude: alt, range };
 }
 
-// Map azimuth/altitude to a unit direction in Three.js world space.
-export function azAltToVector(azDeg, altDeg) {
+// Map azimuth/altitude to a unit direction in Three.js world space, writing into
+// `out` (no allocation) — use this on hot per-frame paths (satellites, planets).
+export function azAltInto(out, azDeg, altDeg) {
   const az = azDeg * DEG, alt = altDeg * DEG;
   const cosAlt = Math.cos(alt);
-  return new THREE.Vector3(
+  return out.set(
     cosAlt * Math.sin(az),   // East  (+X)
     Math.sin(alt),           // Up    (+Y)
     -cosAlt * Math.cos(az),  // North (-Z)
   );
+}
+
+// Convenience allocating variant (fine for one-shot/setup callers).
+export function azAltToVector(azDeg, altDeg) {
+  return azAltInto(new THREE.Vector3(), azDeg, altDeg);
 }
 
 // Place an object on the dome. We compress altitude/range non-linearly so a
@@ -68,4 +74,9 @@ export function azAltToVector(azDeg, altDeg) {
 // a legibility choice, not a physical distance.
 export function domePosition(azDeg, altDeg, shellRadius) {
   return azAltToVector(azDeg, altDeg).multiplyScalar(shellRadius);
+}
+
+// Allocation-free dome placement: write straight into a caller-owned Vector3.
+export function domePositionInto(out, azDeg, altDeg, shellRadius) {
+  return azAltInto(out, azDeg, altDeg).multiplyScalar(shellRadius);
 }

@@ -127,9 +127,10 @@ export class RadarRenderer {
   }
 
   // --- lifecycle ---------------------------------------------------------------
-  // state: the app's shared state object, used once to seed the service-filter
-  // checkboxes and feed status from the current app state when radar becomes active.
-  setActive(on, state) {
+  // Toggle the radar view on/off. The service filter now lives in the shared command
+  // panel (a single source of truth read via state.cats in _collect), so there are no
+  // radar-local checkboxes to seed here.
+  setActive(on) {
     this.active = on;
     this.canvas.style.display = on ? 'block' : 'none';
     this.overlay.style.display = on ? 'block' : 'none';
@@ -137,7 +138,6 @@ export class RadarRenderer {
     if (on) {
       this.resize();
       this._needsFit = true;
-      if (state?.cats) this._syncCatCheckboxes(state.cats);
     }
   }
   setObserver(o) { if (o) this.observer = o; }
@@ -222,9 +222,12 @@ export class RadarRenderer {
     if (t - (this._lastChrome || 0) > 250) {
       this._updateStatus();
       this._updateTrackList();
+      // Detail panel is a DOM innerHTML rewrite — throttle it with the rest of the
+      // chrome instead of running it every frame (60×/s tore down + rebuilt the panel
+      // for a selected track, churning layout/GC and clobbering any text selection).
+      this._updateDetail();
       this._lastChrome = t;
     }
-    this._updateDetail();
   }
 
   // --- basemap (Web Mercator tile mosaic, proxied through /api/tile) -----------
@@ -458,71 +461,19 @@ export class RadarRenderer {
     }
   }
 
-  // --- HTML overlay: controls (location/range/basemap/filter/sweep/view) + status/list/detail --
+  // --- HTML overlay: the top status strip + track list / detail / attribution.
+  // The scope's CONTROLS live in the one unified command panel (index.html #panel,
+  // wired in ui.js) so there's a single menu across every view — this renderer just
+  // exposes public methods (setRange/setBasemap/setSweep/recenter/togglePickMode)
+  // for that panel to drive.
   _buildOverlay() {
     const el = document.createElement('div');
     el.id = 'radar-ui';
-    const rangeOpts = RADAR_RANGES_NM.map((nm) => `<button type="button" data-nm="${nm}"${nm === 80 ? ' class="active"' : ''}>${nm}</button>`).join('');
     el.innerHTML = `
       <div id="rdr-status">
         <span class="rdr-brand"><i class="rdr-mark"></i><b>VANTAGE</b><span class="rdr-mode">Air · Tactical Scope</span></span>
         <span class="rdr-sys"><i class="dot"></i><span id="rdr-feed">ADS-B LINK</span></span>
         <span id="rdr-clock" class="data"></span>
-      </div>
-
-      <div id="rdr-controls" class="panel">
-        <div class="rdr-c-head">TACTICAL SCOPE</div>
-
-        <div class="rdr-grp">
-          <div class="rdr-grp-h">Location · Ownship</div>
-          <div class="rdr-row2">
-            <input id="rdr-lat" class="data" type="number" step="0.0001" placeholder="Lat" />
-            <input id="rdr-lon" class="data" type="number" step="0.0001" placeholder="Lon" />
-          </div>
-          <div class="rdr-btnrow">
-            <button id="rdr-loc-set" type="button">Set</button>
-            <button id="rdr-loc-me" type="button">My location</button>
-          </div>
-          <button id="rdr-loc-pick" type="button" class="rdr-wide">Pick location on map</button>
-        </div>
-
-        <div class="rdr-grp">
-          <div class="rdr-grp-h">Range · Outer Ring (NM)</div>
-          <div class="rdr-seg" id="rdr-range">${rangeOpts}</div>
-          <button id="rdr-recenter" type="button" class="rdr-wide">Recentre on ownship</button>
-        </div>
-
-        <div class="rdr-grp">
-          <div class="rdr-grp-h">Basemap · Imagery</div>
-          <div class="rdr-btnrow" id="rdr-basemap">
-            <button type="button" data-bm="none" class="active">None</button>
-            <button type="button" data-bm="sat">Satellite</button>
-            <button type="button" data-bm="terrain">Terrain</button>
-          </div>
-        </div>
-
-        <div class="rdr-grp">
-          <div class="rdr-grp-h">Service Filter</div>
-          <div class="rdr-chips">
-            <label><input type="checkbox" data-rcat="mil" checked /> Military <i class="swatch" style="background:#3fcf6a"></i></label>
-            <label><input type="checkbox" data-rcat="law" checked /> Law enforcement <i class="swatch" style="background:#36c6e0"></i></label>
-            <label><input type="checkbox" data-rcat="ems" checked /> EMS / Fire <i class="swatch" style="background:#ffb020"></i></label>
-            <label><input type="checkbox" data-rcat="civ" checked /> Civilian <i class="swatch" style="background:#c6d4e0"></i></label>
-          </div>
-        </div>
-
-        <div class="rdr-grp">
-          <label class="rdr-row2"><input type="checkbox" id="rdr-sweep-cb" checked /> Sweep</label>
-        </div>
-
-        <div class="rdr-grp">
-          <div class="rdr-grp-h">View</div>
-          <div class="rdr-btnrow">
-            <button type="button" data-mode="ceiling">Ceiling</button>
-            <button type="button" data-mode="fisheye">Fisheye</button>
-            <button type="button" data-mode="free">Free</button>
-          </div>
-        </div>
       </div>
 
       <div id="rdr-attrib"></div>
@@ -544,77 +495,25 @@ export class RadarRenderer {
     this._elRows = el.querySelector('#rdr-tl-rows');
     this._elDetail = el.querySelector('#rdr-detail');
     this._elAttrib = el.querySelector('#rdr-attrib');
-    this._elLat = el.querySelector('#rdr-lat');
-    this._elLon = el.querySelector('#rdr-lon');
-    this._elPick = el.querySelector('#rdr-loc-pick');
 
     this._elRows.addEventListener('click', (e) => {
       const row = e.target.closest('[data-id]');
       if (row) { this._selected = row.dataset.id; this._updateTrackList(); this._updateDetail(); }
     });
-
-    el.querySelector('#rdr-loc-set').addEventListener('click', () => {
-      const lat = parseFloat(this._elLat.value), lon = parseFloat(this._elLon.value);
-      if (Number.isFinite(lat) && Number.isFinite(lon)) {
-        this.cb.onObserverChange?.({ lat, lon, alt: this.observer.alt || 0 });
-      }
-    });
-    el.querySelector('#rdr-loc-me').addEventListener('click', () => {
-      if (!navigator.geolocation) return;
-      navigator.geolocation.getCurrentPosition((pos) => {
-        this.cb.onObserverChange?.({
-          lat: pos.coords.latitude, lon: pos.coords.longitude, alt: pos.coords.altitude || 0,
-        });
-      });
-    });
-    this._elPick.addEventListener('click', () => {
-      this._placingLocation = !this._placingLocation;
-      this._elPick.classList.toggle('active', this._placingLocation);
-      this._elPick.textContent = this._placingLocation ? 'Click the map to set…' : 'Pick location on map';
-    });
-
-    const rangeEl = el.querySelector('#rdr-range');
-    rangeEl.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-nm]');
-      if (btn) this.cb.onRangeChange?.(parseInt(btn.dataset.nm, 10));
-    });
-    el.querySelector('#rdr-recenter').addEventListener('click', () => this._recenter());
-
-    el.querySelector('#rdr-basemap').addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-bm]');
-      if (!btn) return;
-      this.setBasemap(btn.dataset.bm);
-    });
-
-    const catBoxes = [...el.querySelectorAll('[data-rcat]')];
-    for (const cb of catBoxes) {
-      cb.addEventListener('change', () => {
-        const cats = {};
-        for (const b of catBoxes) cats[b.dataset.rcat] = b.checked;
-        this.cb.onCatFilter?.(cats);
-      });
-    }
-
-    const sweepCb = el.querySelector('#rdr-sweep-cb');
-    sweepCb.addEventListener('change', () => { this.sweepOn = sweepCb.checked; });
-
-    el.querySelector('[data-mode="ceiling"]').closest('.rdr-btnrow').addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-mode]');
-      if (btn) this.cb.onDisplayChange?.(btn.dataset.mode);
-    });
   }
+
+  // ---- public control surface (driven by the unified command panel) ----
+  recenter() { this._recenter(); }
+  // Toggle "click the map to set location" mode; returns the new state so the panel
+  // button can reflect it (the canvas click handler calls onPickModeChange(false)
+  // when a point is picked).
+  togglePickMode() { this._placingLocation = !this._placingLocation; return this._placingLocation; }
 
   setBasemap(mode) {
     this.basemap = mode;
-    const el = this.overlay?.querySelector('#rdr-basemap');
-    if (el) for (const b of el.querySelectorAll('[data-bm]')) b.classList.toggle('active', b.dataset.bm === mode);
+    // The panel owns the active-button state now; the renderer just needs the tile
+    // source + the provider attribution string shown bottom-left.
     if (this._elAttrib) this._elAttrib.textContent = BASEMAPS[mode]?.attribution || '';
-  }
-
-  _syncCatCheckboxes(cats) {
-    for (const b of this.overlay.querySelectorAll('[data-rcat]')) {
-      b.checked = cats[b.dataset.rcat] !== false;
-    }
   }
 
   _updateStatus() {
@@ -628,9 +527,7 @@ export class RadarRenderer {
     this._elFeed.textContent = `${statusText} · ${n} TRK · ${this.rangeNm}NM`;
     const dotColor = { nominal: '#3FCF6A', stale: '#FFB020', offline: '#FF3B47' }[this._feedStatus] || SWEEP;
     if (this._elFeedDot) { this._elFeedDot.style.background = dotColor; this._elFeedDot.style.boxShadow = `0 0 6px ${dotColor}`; }
-    // keep the location inputs current (unless the user is actively editing them)
-    if (document.activeElement !== this._elLat) this._elLat.value = this.observer.lat.toFixed(4);
-    if (document.activeElement !== this._elLon) this._elLon.value = this.observer.lon.toFixed(4);
+    // (the lat/lon readout lives in the shared command panel's Location form now)
   }
 
   _updateTrackList() {
@@ -716,8 +613,7 @@ export class RadarRenderer {
           const { lat, lon } = this._screenToLatLon(e.clientX, e.clientY);
           this.cb.onObserverChange?.({ lat, lon, alt: this.observer.alt || 0 });
           this._placingLocation = false;
-          this._elPick.classList.remove('active');
-          this._elPick.textContent = 'Pick location on map';
+          this.cb.onPickModeChange?.(false); // let the panel button reset its label
         } else {
           const id = this._hit(e.clientX, e.clientY);
           this._selected = id || null;

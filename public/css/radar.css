@@ -25,15 +25,26 @@
    map, not a fixed round scope, so no vignette/disc-fit. */
 #radar { position: fixed; inset: 0; display: none; z-index: 1; background: var(--r-bg); }
 
-/* radar mode replaces the ENTIRE dome UI with its own self-contained console. */
+/* The ATC "now tuned" chip stays available in radar mode (audio can be playing), but
+   its dome position (bottom-right) sits on top of the track list. Re-anchor it under
+   the top status bar, centred, clear of the left rail / track list / detail panel. */
+body.radar-on #atc-chip {
+  top: 40px; bottom: auto; right: auto; left: 50%; transform: translateX(-50%);
+}
+
+/* radar mode hides the DOME-specific visual overlays, but the command panel (#panel)
+   stays — it's the one menu shared across every view (its radar-only sections show,
+   its dome-only sections hide; see ui.js updateModeRows). */
 body.radar-on #ceiling-mask,
 body.radar-on #ceiling-brush,
 body.radar-on #brush-cursor,
 body.radar-on #flightboard,
 body.radar-on #compass,
 body.radar-on #iss-alert,
-body.radar-on #info,
-body.radar-on #panel { display: none !important; }
+body.radar-on #info { display: none !important; }
+
+/* drop the panel below the full-width tactical status strip so they don't overlap */
+body.radar-on #panel { top: 40px; max-height: calc(100vh - 54px); }
 
 /* ---- overlay chrome ---- */
 #radar-ui { position: fixed; inset: 0; z-index: 6; pointer-events: none; }

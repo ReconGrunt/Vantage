@@ -7,7 +7,7 @@
 // adsbdb via our proxy.
 
 import * as THREE from 'three';
-import { lookAngles, domePosition, azAltToVector, DEG } from './coords.js';
+import { lookAngles, domePosition, DEG } from './coords.js';
 import { SHELLS, makeTextSprite } from './sky.js';
 import { buildAirliner, buildHelicopter, aircraftMaterial } from './plane-model.js';
 import { classify, isHelicopter, CATEGORY } from './classify.js';
@@ -319,10 +319,16 @@ export class AircraftLayer {
     const key = modelKeyFor(entry);
     const usingGlb = !!(this.models && this.models[key]);
     if (!force && entry.mesh && entry.modelKey === key && entry._glb === usingGlb) return;
+    const prevMesh = entry.mesh, prevGlb = entry._glb;
     entry.modelKey = key;
     entry._glb = usingGlb;
 
-    if (entry.mesh) this.group.remove(entry.mesh);
+    if (prevMesh) {
+      this.group.remove(prevMesh);
+      // glTF instances own per-instance cloned materials (assets.js instantiate);
+      // free them on swap. Procedural meshes share this.mat/this.geo — never dispose those.
+      if (prevGlb) disposeInstance(prevMesh);
+    }
     let mesh;
     if (usingGlb) {
       mesh = instantiate(this.models[key]);   // real model, nose at -Z, unit size
@@ -345,6 +351,10 @@ export class AircraftLayer {
     this.group.remove(entry.mesh, entry.trail, entry.label);
     if (entry.aura) { this.group.remove(entry.aura); entry.aura.material.dispose(); }
     entry.trail.geometry.dispose();
+    // Free per-instance GPU resources so a 24/7 kiosk with constant plane churn
+    // doesn't leak VRAM: cloned glTF materials + the label's CanvasTexture/material.
+    if (entry._glb && entry.mesh) disposeInstance(entry.mesh);
+    if (entry.label) { entry.label.material.map?.dispose(); entry.label.material.dispose(); }
     this.planes.delete(id);
     this.emergencyCode.delete(id);   // so a re-appearing emergency is treated as a fresh ENTER + re-logged
   }
@@ -701,6 +711,10 @@ export class AircraftLayer {
     try {
       const url = `/api/flightinfo?callsign=${encodeURIComponent((s.callsign || '').trim())}&icao24=${encodeURIComponent(entry.id || '')}`;
       entry.info = await (await fetch(url)).json();
+      // The plane can despawn during the in-flight fetch (requestEnrich from hover
+      // skips the pre-check entirely). Rebuilding its mesh now would add() a brand-new
+      // orphan Object3D that's never updated, picked, or removed — a permanent leak.
+      if (!this.planes.has(entry.id)) return;
       this._reclassify(entry);                     // colour-code + heli swap
       if (this.showLabels && entry.label) this._refreshLabel(entry);
     } catch { /* leave un-enriched */ }
@@ -750,9 +764,11 @@ export class AircraftLayer {
     if (entry.labelText === text) return;
     entry.labelText = text;
     const fresh = makeTextSprite(text, 0xdff1ff, 36);
-    entry.label.material.map?.dispose();
+    const old = entry.label.material;
     entry.label.material = fresh.material;
     entry.label.scale.copy(fresh.scale);
+    old.map?.dispose();
+    old.dispose();               // free the old SpriteMaterial too, not just its texture
   }
 }
 
@@ -854,12 +870,14 @@ function toUnit(p, out) {
   return out.set(c * Math.cos(lo), c * Math.sin(lo), Math.sin(la));
 }
 
-// Initial great-circle bearing (deg, 0=N) from geodetic point a to b.
-function bearingDeg(a, b) {
-  const la1 = a.lat * DEG, la2 = b.lat * DEG, dlon = (b.lon - a.lon) * DEG;
-  const y = Math.sin(dlon) * Math.cos(la2);
-  const x = Math.cos(la1) * Math.sin(la2) - Math.sin(la1) * Math.cos(la2) * Math.cos(dlon);
-  return (Math.atan2(y, x) / DEG + 360) % 360;
+// Free a glTF instance's per-instance cloned materials (see assets.js instantiate,
+// which clones materials but SHARES geometry — so never dispose the geometry here).
+function disposeInstance(obj) {
+  obj.traverse((o) => {
+    if (!o.isMesh || !o.material) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of mats) m.dispose();
+  });
 }
 
 // Linear blend between two geodetic points. Longitude is wrapped to the short way

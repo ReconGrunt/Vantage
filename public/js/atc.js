@@ -69,6 +69,24 @@ export class AtcAudio {
 
   setEnabled(on) { this.enabled = on; if (!on) this.stop(); else { this._muted = false; this._resolve(); } }
 
+  // The observer moved: stop playing comms from where you used to be. Un-keep any
+  // ticked tower now beyond coverage, clear a manual tower/plane that's out of range,
+  // and drop the auto-follow slot (it re-derives from the new location's overhead
+  // traffic next frame). Then re-resolve so audio switches to a nearby feed — or goes
+  // quiet if nothing's in range here.
+  setObserver(lat, lon) {
+    if (lat == null || lon == null) return;
+    const outOfRange = (id) => {
+      const f = this._feedById.get(id);
+      return !f || haversine(lat, lon, f.lat, f.lon) > COVERAGE_KM;
+    };
+    for (const id of [...this.kept.keys()]) if (outOfRange(id)) this.kept.delete(id);
+    if (this.manual && this.manual.kind === 'tower' && outOfRange(this.manual.id)) this.manual = null;
+    if (this.manual && this.manual.kind === 'plane') this.manual = null; // a plane you hovered elsewhere is stale
+    this.follow = null;
+    this._resolve();
+  }
+
   // ---- intent setters (mutate a slot, then re-resolve) --------------------------
   // Hovered TOWER: highest priority, transient.
   tuneFeed(feed) { this._muted = false; this.manual = feed ? { id: feed.id, label: feed.label, kind: 'tower' } : null; this._resolve(); }

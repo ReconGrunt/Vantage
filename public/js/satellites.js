@@ -4,7 +4,7 @@
 
 import * as THREE from 'three';
 import * as satellite from 'satellite.js';
-import { domePosition, DEG } from './coords.js';
+import { domePositionInto, DEG } from './coords.js';
 import { SHELLS, makeTextSprite } from './sky.js';
 import { instantiate } from './assets.js';
 
@@ -40,6 +40,9 @@ export class SatelliteLayer {
     this.group.add(this.highlightLabel);
 
     this.visibleSats = []; // parallel to point positions, for picking
+    // Reusable per-visible-sat record objects (each owns a persistent Vector3
+    // `pos`), so the hot update() loop below allocates nothing per frame.
+    this._recPool = [];
     this.models = null;
     this.issMesh = null;
     this.satPool = [];     // reusable generic-satellite model clones
@@ -95,8 +98,11 @@ export class SatelliteLayer {
 
     const posArr = this._posArr;
     let n = 0;
-    this.visibleSats = [];
-    let issPos = null;
+    // Reuse the array + pooled records instead of reallocating every frame (this
+    // runs at 60fps for a 24/7 kiosk; the visual/active groups have 100s of sats).
+    const vis = this.visibleSats;
+    vis.length = 0;
+    let issRec = null;
 
     for (const { name, satrec } of this.satrecs) {
       if (n >= this.maxPoints) break;
@@ -108,7 +114,10 @@ export class SatelliteLayer {
       if (altDeg < 0) continue; // below horizon
 
       const azDeg = (look.azimuth * (180 / Math.PI) + 360) % 360;
-      const p = domePosition(azDeg, altDeg, SHELLS.satellites);
+      let rec = this._recPool[n];
+      if (!rec) rec = this._recPool[n] = { pos: new THREE.Vector3() };
+      domePositionInto(rec.pos, azDeg, altDeg, SHELLS.satellites);
+      const p = rec.pos;
       posArr[n * 3] = p.x; posArr[n * 3 + 1] = p.y; posArr[n * 3 + 2] = p.z;
       n++;
 
@@ -118,12 +127,11 @@ export class SatelliteLayer {
       const speed = v ? Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z) : null;
 
       const isISS = /ISS|ZARYA/i.test(name);
-      this.visibleSats.push({
-        name, azimuth: azDeg, altitude: altDeg, rangeKm: look.rangeSat,
-        heightKm: gd.height, speedKmS: speed, satrec, pos: p, isISS,
-      });
+      rec.name = name; rec.azimuth = azDeg; rec.altitude = altDeg; rec.rangeKm = look.rangeSat;
+      rec.heightKm = gd.height; rec.speedKmS = speed; rec.satrec = satrec; rec.isISS = isISS;
+      vis.push(rec);
 
-      if (isISS) issPos = { p, name, heightKm: gd.height, speed };
+      if (isISS) issRec = rec;
     }
 
     // Commit in place: only flag the used range dirty + redraw n points. No new
@@ -147,11 +155,11 @@ export class SatelliteLayer {
 
     this._placeModels(date);
 
-    if (issPos) {
+    if (issRec) {
       this.highlightLabel.visible = true;
-      this.highlightLabel.position.copy(issPos.p);   // p is already a fresh per-frame Vector3
+      this.highlightLabel.position.copy(issRec.pos);
       this.highlightLabel.position.y += 14;
-      const txt = `ISS\n${Math.round(issPos.heightKm)} km  ${(issPos.speed || 0).toFixed(1)} km/s`;
+      const txt = `ISS\n${Math.round(issRec.heightKm)} km  ${(issRec.speedKmS || 0).toFixed(1)} km/s`;
       this._setLabel(txt);
     } else {
       this.highlightLabel.visible = false;
@@ -263,8 +271,13 @@ export class SatelliteLayer {
     if (this._lastLabel === text) return;
     this._lastLabel = text;
     const fresh = makeTextSprite(text, 0x7CFFB2, 36);
+    // Dispose the previous CanvasTexture + SpriteMaterial: the ISS label text
+    // (height/speed) changes ~1×/s while overhead, so without this every pass
+    // leaks hundreds of textures until WebGL context loss on a 24/7 run.
+    const old = this.highlightLabel.material;
     this.highlightLabel.material = fresh.material;
     this.highlightLabel.scale.copy(fresh.scale);
+    if (old) { old.map?.dispose(); old.dispose(); }
   }
 }
 
