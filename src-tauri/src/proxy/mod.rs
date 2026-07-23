@@ -4,8 +4,10 @@
 
 pub mod aircraft;
 pub mod atc;
+pub mod cameras;
 pub mod flightinfo;
 pub mod health;
+pub mod incidents;
 pub mod tile;
 pub mod tle;
 pub mod weather;

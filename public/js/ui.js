@@ -1,6 +1,7 @@
 // ui.js — overlay panel: layer toggles, observer location, clock, object info.
 
-export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, onBloomToggle, onWeatherToggle, onGroundToggle, onPathToggle, onLabelFields, onDisplayChange, onNorthChange, onZoom, onSkySpan, onSkyOnly, onGuidesToggle, onBoardToggle, onAutoNorth, onCalibration, onRange, onSatGroupChange, onCatFilter, onBasemap, onRadarRange, onSweep, onRecenter, onPickToggle }) {
+export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, onBloomToggle, onWeatherToggle, onGroundToggle, onPathToggle, onLabelFields, onDisplayChange, onNorthChange, onZoom, onSkySpan, onSkyOnly, onGuidesToggle, onBoardToggle, onAutoNorth, onCalibration, onRange, onSatGroupChange, onCatFilter, onBasemap, onRadarRange, onSweep, onRecenter, onPickToggle,
+  onCityLayer, onCityCams, onCityHeat, onCityRange, onCityWindow, onCityBasemap, onCityRecenter, onCityPick }) {
   const $ = (id) => document.getElementById(id);
 
   // layer toggles
@@ -72,7 +73,8 @@ export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, 
     // inline display) so it composes with the kiosk-slim rule instead of overriding it.
     for (const sec of document.querySelectorAll('#panel [data-view]')) {
       const v = sec.dataset.view;
-      const show = v === 'all' || (v === 'dome' && dome) || (v === 'radar' && !dome);
+      const bucket = dome ? 'dome' : m; // 'dome' | 'radar' | 'city'
+      const show = v === 'all' || v === bucket;
       sec.classList.toggle('view-off', !show);
     }
     for (const b of viewBtns) b.classList.toggle('active', b.dataset.mode === m);
@@ -119,6 +121,32 @@ export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, 
   const pickBtn = $('rdr-pick-btn');
   const setPick = (on) => { if (!pickBtn) return; pickBtn.classList.toggle('active', !!on); pickBtn.textContent = on ? 'Click the map to set…' : 'Pick location on map'; };
   pickBtn?.addEventListener('click', () => setPick(onPickToggle?.()));
+
+  // --- city (ground common-operating-picture) controls ---
+  for (const el of document.querySelectorAll('[data-citylayer]')) {
+    el.addEventListener('change', () => onCityLayer?.(el.dataset.citylayer, el.checked));
+  }
+  $('city-cams')?.addEventListener('change', (e) => onCityCams?.(e.target.checked));
+  $('city-heat')?.addEventListener('change', (e) => onCityHeat?.(e.target.checked));
+  const ctyRangeSeg = $('cty-range-seg');
+  if (ctyRangeSeg) {
+    const sync = (km) => { for (const b of ctyRangeSeg.querySelectorAll('[data-km]')) b.classList.toggle('active', parseInt(b.dataset.km, 10) === km); };
+    ctyRangeSeg.addEventListener('click', (e) => { const b = e.target.closest('[data-km]'); if (!b) return; const km = parseInt(b.dataset.km, 10); sync(km); onCityRange?.(km); });
+  }
+  const ctyWinSeg = $('cty-window-seg');
+  if (ctyWinSeg) {
+    const sync = (min) => { for (const b of ctyWinSeg.querySelectorAll('[data-win]')) b.classList.toggle('active', parseInt(b.dataset.win, 10) === min); };
+    ctyWinSeg.addEventListener('click', (e) => { const b = e.target.closest('[data-win]'); if (!b) return; const min = parseInt(b.dataset.win, 10); sync(min); onCityWindow?.(min); });
+  }
+  const ctyBmSeg = $('cty-basemap-seg');
+  if (ctyBmSeg) {
+    const sync = (bm) => { for (const b of ctyBmSeg.querySelectorAll('[data-bm]')) b.classList.toggle('active', b.dataset.bm === bm); };
+    ctyBmSeg.addEventListener('click', (e) => { const b = e.target.closest('[data-bm]'); if (!b) return; sync(b.dataset.bm); onCityBasemap?.(b.dataset.bm); });
+  }
+  $('cty-recenter-btn')?.addEventListener('click', () => onCityRecenter?.());
+  const ctyPickBtn = $('cty-pick-btn');
+  const setCityPick = (on) => { if (!ctyPickBtn) return; ctyPickBtn.classList.toggle('active', !!on); ctyPickBtn.textContent = on ? 'Click the map to set…' : 'Pick location on map'; };
+  ctyPickBtn?.addEventListener('click', () => setCityPick(onCityPick?.()));
 
   // ceiling "visible sky" span (how wide a cone of sky fills the disc)
   const spanEl = $('skyspan');
@@ -369,6 +397,7 @@ export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, 
     setDisplayMode(m) { displayEl.value = m; updateModeRows(); },
     // Called when the radar map-pick completes so the panel button resets its label.
     resetPick() { setPick(false); },
+    resetCityPick() { setCityPick(false); },
     setNorth(v) { showNorth(v); },
     setZoom(z) { zoomEl.value = z; zoomVal.textContent = `${(+z).toFixed(1)}×`; },
     setBearing(deg, editable) {

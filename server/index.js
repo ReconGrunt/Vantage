@@ -17,6 +17,9 @@ import express from 'express';
 import path from 'node:path';
 import dns from 'node:dns';
 import { fileURLToPath } from 'node:url';
+// Ground/City domain: fused public-safety / hazard / camera feeds (server/sources/*).
+import { collect, resolveConfig, cameraIndex, listAdapters } from './sources/registry.js';
+import { bboxFromRadius } from './sources/types.js';
 
 // Prefer IPv4: some upstreams (e.g. LiveATC edges) advertise AAAA records whose
 // IPv6 path black-holes, making undici's fetch hang on connect while IPv4 is fine.
@@ -427,6 +430,96 @@ app.get('/api/tile/:style/:z/:x/:y', async (req, res) => {
     res.status(502).end();
   }
 });
+
+// --- Ground / City domain: incidents, cameras, camera-image proxy ---------------
+// The "second domain" of the common operating picture. /api/incidents fuses many free
+// public feeds (CAD/911, 311, NWS, USGS, …) into normalized Events; /api/cameras returns
+// a public-camera catalog. Same discipline as the Air routes: quantized cache key, cache
+// + serve-stale, and per-source health so a dead feed is visible, never fatal. Source
+// config (opt-in gray feeds, keys) is resolved once from env at boot.
+const CITY_CFG = resolveConfig();
+
+app.get('/api/incidents', async (req, res) => {
+  const lat = parseFloat(req.query.lat), lon = parseFloat(req.query.lon);
+  const radiusKm = Math.min(parseFloat(req.query.radius) || 30, 120);
+  if (!isFinite(lat) || !isFinite(lon)) return res.status(400).json({ error: 'lat and lon required', events: [], sources: [] });
+  // Quantize the key (0.1° ≈ 11 km) so a browsable map can't grow the cache unbounded.
+  const key = `inc:${lat.toFixed(1)},${lon.toFixed(1)},${Math.round(radiusKm)}`;
+  const cached = getCached(key);
+  if (cached) return res.json({ ...cached, cached: true });
+  try {
+    const { items, sources } = await collect('incidents', bboxFromRadius(lat, lon, radiusKm), CITY_CFG);
+    // Freshest first, then cap: a 30-day crime layer can return 1000+ rows, but the map
+    // + hotspot engine only need a bounded, recency-ranked working set per poll.
+    items.sort((a, b) => b.ts - a.ts);
+    const events = items.slice(0, 700);
+    const payload = { events, sources, ts: Math.floor(Date.now() / 1000) };
+    setCached(key, payload, 20_000); // CAD/911 cadence ~30 s; cache 20 s
+    res.json(payload);
+  } catch (err) {
+    const stale = cache.get(key);
+    if (stale) return res.json({ ...stale.data, stale: true, error: String(err) });
+    res.status(502).json({ error: String(err), events: [], sources: [] });
+  }
+});
+
+app.get('/api/cameras', async (req, res) => {
+  const lat = parseFloat(req.query.lat), lon = parseFloat(req.query.lon);
+  const radiusKm = Math.min(parseFloat(req.query.radius) || 30, 120);
+  if (!isFinite(lat) || !isFinite(lon)) return res.status(400).json({ error: 'lat and lon required', cameras: [] });
+  const key = `cam:${lat.toFixed(1)},${lon.toFixed(1)},${Math.round(radiusKm)}`;
+  const cached = getCached(key);
+  if (cached) return res.json({ ...cached, cached: true });
+  try {
+    const { items } = await collect('cameras', bboxFromRadius(lat, lon, radiusKm), CITY_CFG);
+    const payload = { cameras: items, ts: Math.floor(Date.now() / 1000) };
+    setCached(key, payload, 10 * 60_000); // camera catalogs are near-static; cache 10 min
+    res.json(payload);
+  } catch (err) {
+    const stale = cache.get(key);
+    if (stale) return res.json({ ...stale.data, stale: true, error: String(err) });
+    res.status(502).json({ error: String(err), cameras: [] });
+  }
+});
+
+// Camera-image proxy. Takes an ID that must resolve against the server's OWN camera
+// catalog (populated by /api/cameras) — never a caller-supplied URL, and the resolved
+// host is allow-listed. This is deliberately NOT an open proxy (no SSRF surface).
+const CAMERA_HOST_ALLOW = ['nyctmc.org', 'dot.ca.gov', 'ca.gov', 'windy.com', 'wsdot.wa.gov'];
+const imgCache = new Map(); // id -> { buf, type, expires }
+const IMG_CACHE_MAX = 1500;
+app.get('/api/camimg/:id', async (req, res) => {
+  const id = String(req.params.id);
+  const url = cameraIndex.get(id);
+  if (!url) return res.status(404).end();
+  let host;
+  try { host = new URL(url).host.toLowerCase(); } catch { return res.status(400).end(); }
+  if (!CAMERA_HOST_ALLOW.some((h) => host === h || host.endsWith('.' + h))) return res.status(403).end();
+  const key = `img:${id}`;
+  const hit = imgCache.get(key);
+  if (hit && hit.expires > Date.now()) {
+    res.setHeader('Content-Type', hit.type);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.end(hit.buf);
+  }
+  try {
+    const upstream = await fetch(url, { headers: { 'User-Agent': 'Vantage/0.1 (camera view)' }, signal: AbortSignal.timeout(8000) });
+    if (!upstream.ok) return res.status(upstream.status).end();
+    const type = upstream.headers.get('content-type') || 'image/jpeg';
+    const buf = Buffer.from(await upstream.arrayBuffer());
+    if (imgCache.size >= IMG_CACHE_MAX) imgCache.delete(imgCache.keys().next().value);
+    imgCache.set(key, { buf, type, expires: Date.now() + 15_000 }); // cams refresh ~30-300 s; 15 s is polite
+    res.setHeader('Content-Type', type);
+    res.setHeader('Cache-Control', 'no-store');
+    res.end(buf);
+  } catch {
+    res.status(502).end();
+  }
+});
+
+// Adapter catalog: which Ground/City feeds exist + their resolved on/off state (live,
+// key-required, or opt-in), so the City view can show the full menu — not just what ran.
+app.get('/api/sources', (_req, res) => res.json({ sources: listAdapters(CITY_CFG) }));
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 

@@ -22,6 +22,7 @@ import { FlightBoard } from './flightboard.js';
 import { FisheyeDome } from './fisheye.js';
 import { CeilingBrush } from './ceiling-brush.js';
 import { RadarRenderer } from './radar.js';
+import { CityRenderer } from './city.js';
 import { DashboardLayout } from './dashboard.js';
 import { loadModels } from './assets.js';
 import { DEG } from './coords.js';
@@ -49,6 +50,7 @@ const state = {
   radarRangeNm: 80,    // radar scope range (outer ring), nautical miles
   basemap: 'none',     // radar basemap: 'none' | 'sat' | 'terrain'
   sweep: true,         // radar rotating sweep
+  cityRangeKm: 25,     // city (ground) domain: fetch + view radius, km
   northDeg: 0,         // orientation of North for ceiling/fisheye projection
   zoom: 1,             // works in every mode (FOV / fisheye disc scale)
   skySpanDeg: 100,     // ceiling: how wide a cone of sky fills the disc (the "radius"); capped so off-zenith perspective stays clean
@@ -333,6 +335,7 @@ function setObserver(obs) {
   refreshWeather();
   rebuildTowers();
   atc.setObserver(obs.lat, obs.lon); // drop ATC feeds from the old location so comms follow you
+  if (state.display === 'city') refreshCity(true); // city feeds follow you too
 }
 
 // The radar's own Range control also drives the actual ADS-B fetch radius (rangeKm),
@@ -381,6 +384,15 @@ const ui = initUI({
   onSweep: (on) => { state.sweep = on; radar.setSweep(on); },
   onRecenter: () => radar.recenter(),
   onPickToggle: () => radar.togglePickMode(),
+  // Ground/City domain controls (shown only when View = City)
+  onCityLayer: (kind, on) => city.setLayer(kind, on),
+  onCityCams: (on) => city.setShowCameras(on),
+  onCityHeat: (on) => city.setShowHeat(on),
+  onCityRange: (km) => setCityRange(km),
+  onCityWindow: (min) => city.setWindow(min),
+  onCityBasemap: (bm) => city.setBasemap(bm),
+  onCityRecenter: () => city.recenter(),
+  onCityPick: () => city.togglePickMode(),
   onNorthChange: (deg) => { state.northDeg = ((deg % 360) + 360) % 360; },
   onZoom: (z) => {
     // Ceiling FOV is capped, so zoom < 1 does nothing there — floor it so the slider isn't dead.
@@ -466,6 +478,17 @@ radar.setRange(state.radarRangeNm);
 radar.setSweep(state.sweep);
 radar.setBasemap(state.basemap);
 
+// Ground/City domain: a top-down city common-operating-picture (incidents + hotspots +
+// public cameras) reusing the radar scope's Mercator engine. Self-contained overlay like
+// radar; it talks back through the same shared callbacks so location/view stay in sync.
+const city = new CityRenderer(document.getElementById('city'), {
+  onObserverChange: setObserver,
+  onDisplayChange: changeDisplay,
+  onPickModeChange: () => ui.resetCityPick?.(),
+});
+city.setRange(state.cityRangeKm);
+city.setBasemap('sat');
+
 // Operator "Arrange" mode: drag / resize / show-hide every widget on a snap grid, PER
 // view, saved to localStorage. Self-contained (builds its own edit overlay + palette);
 // main.js only tells it the current display mode + window size. Built AFTER radar because
@@ -519,10 +542,13 @@ function setDisplay(mode) {
   document.body.classList.toggle('ceiling-on', mode === 'ceiling');
   // the painted ceiling mask only applies over a projector image (ceiling/fisheye) —
   // never over the radar scope (pass 'free'-equivalent so it deactivates there)
-  ceilingBrush?.setDisplayMode(mode === 'radar' ? 'free' : mode);
+  ceilingBrush?.setDisplayMode(mode === 'radar' || mode === 'city' ? 'free' : mode);
   // radar mode swaps the WebGL dome for the top-down map (+ its own chrome); pass
   // state so radar can seed its service-filter checkboxes from the current state.cats
   radar?.setActive(mode === 'radar', state);
+  // city mode: the ground common-operating-picture (its own overlay + a data poll)
+  city?.setActive(mode === 'city');
+  if (mode === 'city') refreshCity(true);
   // engage the per-view saved layout (dome bucket for ceiling/fisheye/free, radar for radar)
   dashboard?.setDisplayMode(mode);
   applyZoom();
@@ -574,6 +600,36 @@ async function refreshWeather() {
     clouds.setWeather(w);
   } catch { /* keep last */ }
 }
+
+// --- Ground/City domain data: fused incidents + public cameras -----------------
+// Incidents refresh at CAD/911 cadence; camera catalogs are near-static so they refetch
+// on view-enter/location-change or every 10 min. Both guarded so a dead feed just leaves
+// the last-known picture up (same serve-stale spirit as the aircraft/weather refreshers).
+let _cityCamAt = 0, _cityCameras = [], _catalogFetched = false;
+async function refreshCity(force) {
+  if (state.display !== 'city') return;
+  const { lat, lon } = state.observer, r = state.cityRangeKm;
+  if (!_catalogFetched) { // one-time: the full feed catalog (live / key-required / opt-in) for the health panel
+    _catalogFetched = true;
+    fetch('/api/sources').then((x) => x.json()).then((d) => city.setCatalog(d.sources || [])).catch(() => { _catalogFetched = false; });
+  }
+  try {
+    const inc = await (await fetch(`/api/incidents?lat=${lat}&lon=${lon}&radius=${r}`)).json();
+    if (force || Date.now() - _cityCamAt > 10 * 60_000) {
+      try {
+        const cam = await (await fetch(`/api/cameras?lat=${lat}&lon=${lon}&radius=${r}`)).json();
+        _cityCameras = cam.cameras || []; _cityCamAt = Date.now();
+      } catch { /* keep last-known cameras */ }
+    }
+    city.setData({ events: inc.events || [], cameras: _cityCameras, sources: inc.sources || [], stale: inc.stale });
+    ui.status(inc.stale ? 'City feeds stale — upstream down' : 'Live');
+  } catch {
+    city.setData({ events: [], cameras: _cityCameras, sources: [], stale: true });
+    ui.status('City feeds offline — showing last-known');
+  }
+}
+// The city Radius control drives both the view and the fetch radius, so they always match.
+function setCityRange(km) { state.cityRangeKm = km; city.setRange(km); refreshCity(true); }
 async function initData() {
   // Stars (HYG catalogue) and satellites (TLE) are INDEPENDENT fetches to
   // different endpoints — load them concurrently so boot latency is max(), not
@@ -595,6 +651,7 @@ async function initData() {
 }
 initData();
 setInterval(() => { if (renderActive) refreshAircraft(); }, 4_000); // near real-time; suspended while hidden
+setInterval(() => { if (renderActive && state.display === 'city') refreshCity(false); }, 30_000); // CAD/911 cadence
 setInterval(() => { if (renderActive) refreshWeather(); }, 10 * 60_000);
 // Refresh TLEs periodically so a 24/7 kiosk/projector keeps fresh orbital
 // elements: SGP4 accuracy degrades as the TLE epoch ages (drift grows over a
@@ -646,6 +703,15 @@ const frame = (t) => {
   const d = now();
   const elapsed = t * 0.001;
   atc.sampleVoice();   // ATC voice-activity → "transmitting" indicator (runs in every mode)
+
+  // City mode: the ground common-operating-picture (a flat geo map of incidents,
+  // hotspots and public cameras). Like radar it skips the whole celestial/WebGL
+  // pipeline; refreshCity() drives the data fetch on its own interval — we just draw.
+  if (state.display === 'city') {
+    city.render(t, state.observer);
+    ui.tick(d);
+    return;
+  }
 
   // Radar mode: a flat top-down scope, not the dome. It only needs live aircraft
   // positions (aircraft.update sets entry.render = smoothed lat/lon), so we skip the
@@ -764,7 +830,7 @@ function setRenderActive(on) {
   if (on === renderActive) return;
   renderActive = on;
   renderer.setAnimationLoop(on ? frame : null);   // detaching stops rAF → idle GPU
-  if (on) { refreshAircraft(); refreshWeather(); }
+  if (on) { refreshAircraft(); refreshWeather(); if (state.display === 'city') refreshCity(true); }
 }
 window.__vantageActive = setRenderActive;
 document.addEventListener('visibilitychange', () => setRenderActive(!document.hidden));
@@ -778,6 +844,7 @@ window.addEventListener('resize', () => {
   fisheye.setSize(window.innerWidth, window.innerHeight);
   ceilingBrush.resize();
   radar.resize();
+  city.resize();
   dashboard.resize();
 });
 fisheye.setSize(window.innerWidth, window.innerHeight);
@@ -805,7 +872,7 @@ if (navigator.xr?.isSessionSupported) {
 {
   const params = new URLSearchParams(location.search);
   const m = params.get('display');
-  if (['free', 'ceiling', 'fisheye', 'radar'].includes(m)) {
+  if (['free', 'ceiling', 'fisheye', 'radar', 'city'].includes(m)) {
     state.display = m; setDisplay(m);
     ui.setDisplayMode(m); // sync the <select> AND the per-mode control rows (range/sweep/skyspan)
   }
@@ -832,6 +899,7 @@ if (navigator.xr?.isSessionSupported) {
     state.observer = { lat: plat, lon: plon, alt: parseFloat(params.get('alt')) || 10 };
     ui.setObserver(state.observer);
     refreshAircraft(); refreshWeather();
+    if (state.display === 'city') refreshCity(true); // ?display=city&lat=&lon= → load THAT city
   }
 }
 

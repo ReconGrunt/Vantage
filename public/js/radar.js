@@ -64,14 +64,14 @@ const BASEMAPS = {
 // world pixel space at a given integer zoom: n = TILE * 2^zoom wide/tall, x=0..n East
 // from the antimeridian, y=0..n North pole to South pole. Same maths Leaflet/Google/
 // OSM use, so our tiles + track positions align with any standard tile provider.
-function project(lat, lon, zoom) {
+export function project(lat, lon, zoom) {
   const n = TILE * 2 ** zoom;
   const x = (lon + 180) / 360 * n;
   const s = Math.max(-0.9999, Math.min(0.9999, Math.sin(lat * DEG)));
   const y = (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * n;
   return { x, y };
 }
-function unproject(x, y, zoom) {
+export function unproject(x, y, zoom) {
   const n = TILE * 2 ** zoom;
   const lon = x / n * 360 - 180;
   const yFrac = 0.5 - y / n;

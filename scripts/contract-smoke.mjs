@@ -104,6 +104,12 @@ async function main() {
   console.log('weather');
   await checkJson('weather', `/api/weather?lat=${LAT}&lon=${LON}`);
 
+  console.log('incidents (ground/city domain)');
+  await checkJson('incidents', `/api/incidents?lat=${LAT}&lon=${LON}&radius=25`, 'events');
+
+  console.log('cameras (ground/city domain)');
+  await checkJson('cameras', `/api/cameras?lat=${LAT}&lon=${LON}&radius=25`, 'cameras');
+
   console.log('flightinfo');
   await checkJson('flightinfo', '/api/flightinfo?callsign=UAL123&icao24=a1b2c3');
 

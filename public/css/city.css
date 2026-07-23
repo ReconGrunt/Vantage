@@ -1,0 +1,117 @@
+/* city.css — Ground/City domain chrome. Shares the ONE design system with style.css /
+   radar.css: near-black, 1px hairline chrome, neo-grotesque labels + monospace data,
+   teal = live/nominal, amber = the selected item. Honest per-source feed health, no
+   classification theatre. Scoped to body.city-on / #city-ui so the dome + radar UIs are
+   untouched. */
+
+:root {
+  --c-bg: var(--bg-2); --c-panel: var(--panel); --c-grid: var(--line); --c-grid-2: var(--line-2);
+  --c-accent: var(--accent); --c-live: var(--live); --c-text: var(--text);
+  --c-dim: var(--muted); --c-mute: var(--mute-2); --c-mono: var(--mono);
+}
+
+#city { position: fixed; inset: 0; display: none; z-index: 1; background: var(--c-bg); }
+
+/* city mode hides the dome-only overlays; the command panel stays (its city sections
+   show, dome sections hide — see ui.js updateModeRows). */
+body.city-on #ceiling-mask,
+body.city-on #ceiling-brush,
+body.city-on #brush-cursor,
+body.city-on #flightboard,
+body.city-on #compass,
+body.city-on #iss-alert,
+body.city-on #info { display: none !important; }
+body.city-on #panel { top: 40px; max-height: calc(100vh - 54px); }
+body.city-on #atc-chip { top: 40px; bottom: auto; right: auto; left: 50%; transform: translateX(-50%); }
+
+#city-ui { position: fixed; inset: 0; z-index: 6; pointer-events: none; }
+#city-ui .data { font-family: var(--c-mono); font-feature-settings: 'tnum' 1, 'lnum' 1; color: var(--c-text); }
+
+/* top command bar */
+#cty-status {
+  position: fixed; top: 0; left: 0; right: 0; height: 32px;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 14px;
+  background: linear-gradient(180deg, rgba(12, 15, 19, 0.96), rgba(12, 15, 19, 0.88));
+  border-bottom: 1px solid var(--c-grid); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  font-family: var(--c-mono); font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--c-dim);
+}
+#cty-status .cty-brand { display: flex; align-items: center; gap: 8px; color: var(--c-text); font-weight: 600; }
+#cty-status .cty-brand b { letter-spacing: 0.16em; font-weight: 700; }
+#cty-status .cty-mode { color: var(--c-mute); letter-spacing: 0.14em; font-weight: 500; }
+#cty-status .cty-mark { width: 13px; height: 13px; flex: none; border: 1.5px solid var(--c-live); border-radius: 2px; position: relative; }
+#cty-status .cty-mark::after { content: ''; position: absolute; inset: 3px; background: var(--c-live); border-radius: 1px; }
+#cty-status .cty-sys { display: flex; align-items: center; gap: 7px; }
+#cty-status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--c-live); box-shadow: 0 0 6px var(--c-live); animation: ctypulse 2.4s ease-in-out infinite; }
+@keyframes ctypulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+#cty-clock { color: var(--c-text); letter-spacing: 0.05em; }
+
+#cty-attrib { position: fixed; left: 14px; bottom: 8px; font-family: var(--c-mono); font-size: 9px; color: var(--c-mute); opacity: 0.75; pointer-events: none; }
+
+/* top-hotspots board (bottom-left) */
+#cty-hotspots {
+  position: fixed; left: 14px; bottom: 22px; width: 240px; pointer-events: auto;
+  background: var(--c-panel); border: 1px solid var(--c-grid); border-radius: 3px;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); padding: 8px 10px;
+}
+.cty-hs-head { font-family: var(--c-mono); font-size: 10px; letter-spacing: 0.14em; color: var(--c-accent); margin-bottom: 7px; }
+.cty-hs-row { display: grid; grid-template-columns: 12px 1fr 64px; gap: 7px; align-items: center; padding: 2px 0; cursor: pointer; }
+.cty-hs-row:hover { opacity: 0.85; }
+.cty-hs-dot { width: 8px; height: 8px; border-radius: 50%; }
+.cty-hs-lbl { font-family: var(--c-mono); font-size: 11px; color: var(--c-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cty-hs-lbl em { color: var(--c-dim); font-style: normal; }
+.cty-hs-bar { height: 5px; background: rgba(255, 255, 255, 0.06); border-radius: 3px; overflow: hidden; }
+.cty-hs-bar i { display: block; height: 100%; }
+.cty-hs-empty { font-family: var(--c-mono); font-size: 10px; color: var(--c-mute); letter-spacing: 0.1em; }
+
+/* event list (bottom-right) */
+#cty-list {
+  position: fixed; right: 14px; bottom: 14px; width: 400px; max-height: 42vh; overflow: hidden;
+  display: flex; flex-direction: column; pointer-events: auto;
+  background: var(--c-panel); border: 1px solid var(--c-grid); border-radius: 3px;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.cty-tl-head, .cty-tl-row { display: grid; grid-template-columns: 0.8fr 2.1fr 0.5fr 0.6fr 0.6fr; gap: 8px; padding: 5px 12px; align-items: center; font-family: var(--c-mono); font-size: 11px; }
+.cty-tl-head { color: var(--c-dim); text-transform: uppercase; letter-spacing: 0.12em; border-bottom: 1px solid var(--c-grid); background: rgba(0, 0, 0, 0.25); }
+.cty-tl-head span:nth-child(n+3), .cty-tl-row span.data { text-align: right; }
+#cty-tl-rows { overflow-y: auto; }
+.cty-tl-row { border-bottom: 1px solid rgba(27, 34, 41, 0.6); cursor: pointer; }
+.cty-tl-row .ttl { color: var(--c-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cty-tl-row:hover { background: rgba(255, 255, 255, 0.03); }
+.cty-tl-row.sel { background: rgba(232, 85, 42, 0.14); box-shadow: inset 2px 0 0 var(--c-accent); }
+.cty-tl-empty { padding: 14px 12px; color: var(--c-mute); font-family: var(--c-mono); font-size: 11px; letter-spacing: 0.12em; text-align: center; text-transform: uppercase; }
+
+/* detail panel + camera popup (right, mutually exclusive) */
+#cty-detail, #cty-cam {
+  position: fixed; right: 14px; top: 44px; width: 340px; pointer-events: auto;
+  background: var(--c-panel); border: 1px solid var(--c-grid-2); border-radius: 3px;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5); font-family: var(--c-mono); font-size: 12px;
+}
+#cty-detail { max-height: calc(100vh - 60px - 44vh); overflow-y: auto; padding-bottom: 8px; }
+.cty-d-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 2px solid var(--c-grid); margin-bottom: 4px; font-weight: 700; }
+.cty-d-head span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cty-d-head .svc { color: var(--c-dim); font-size: 10px; letter-spacing: 0.12em; white-space: nowrap; }
+.cty-d-row { display: flex; justify-content: space-between; gap: 10px; padding: 3px 12px; }
+.cty-d-row span:first-child { color: var(--c-mute); text-transform: uppercase; letter-spacing: 0.1em; font-size: 10px; }
+.cty-d-row span.data { text-align: right; }
+.cty-d-link { padding: 7px 12px 2px; }
+.cty-d-link a { color: var(--c-live); text-decoration: none; font-size: 11px; letter-spacing: 0.06em; }
+
+.cty-cam-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--c-grid); }
+#cty-cam-name { color: var(--c-text); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#cty-cam-close { background: transparent; border: 0; color: var(--c-dim); cursor: pointer; font-size: 13px; }
+#cty-cam-img { display: block; width: 100%; height: auto; background: #05070a; min-height: 120px; }
+.cty-cam-meta { padding: 6px 12px; color: var(--c-mute); font-size: 10px; }
+
+/* source health + incident log rendered into #panel city sections */
+.cty-src { display: grid; grid-template-columns: 12px 1fr auto; gap: 8px; align-items: center; font-family: var(--c-mono); font-size: 11px; padding: 2px 0; }
+.cty-src-dot { width: 8px; height: 8px; border-radius: 50%; }
+.cty-src-id { color: var(--c-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cty-src-id em { color: var(--c-accent); font-style: normal; font-size: 9px; letter-spacing: 0.08em; }
+.cty-src-n { color: var(--c-dim); }
+.cty-log-row { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-family: var(--c-mono); font-size: 11px; padding: 3px 0; border-bottom: 1px solid rgba(27, 34, 41, 0.5); }
+.cty-log-time { color: var(--c-mute); }
+.cty-log-ttl { color: var(--c-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cty-log-kind { font-size: 10px; letter-spacing: 0.06em; }
+
+@media (prefers-reduced-motion: reduce) { #cty-status .dot { animation: none; } }

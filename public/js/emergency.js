@@ -15,3 +15,30 @@ export function emergencyFor(squawk) {
   if (squawk == null || squawk === '') return null;
   return EMERGENCY[String(squawk).trim()] || null;
 }
+
+// --- Ground / City domain taxonomy ------------------------------------------------
+// The promised ground categories: one kind -> { label, hex, glyph } table so the city
+// map, its event list, the detail panel and the city-incident log all render "what kind
+// of thing is happening" identically — exactly how EMERGENCY unifies air distress.
+// Colours obey the shared C2 palette (teal = live, amber = attention held for selection).
+export const GROUND_KIND = {
+  fire:            { label: 'Fire',     hex: '#FF6A2C', glyph: 'F' },
+  medical:         { label: 'Medical',  hex: '#FF3D71', glyph: '+' },
+  police:          { label: 'Police',   hex: '#36C6E0', glyph: 'P' },
+  traffic:         { label: 'Traffic',  hex: '#FFB020', glyph: 'T' },
+  hazard:          { label: 'Hazard',   hex: '#E8552A', glyph: '!' },
+  quake:           { label: 'Quake',    hex: '#B07CFF', glyph: '~' },
+  weather:         { label: 'Weather',  hex: '#5AA9FF', glyph: '*' },
+  'fire-wildland': { label: 'Wildfire', hex: '#FF8A00', glyph: 'W' },
+  social:          { label: 'Social',   hex: '#7C5CFF', glyph: 'S' },
+  civic:           { label: 'Civic',    hex: '#8A97A3', glyph: 'i' },
+  outage:          { label: 'Outage',   hex: '#FFD166', glyph: 'O' },
+  camera:          { label: 'Camera',   hex: '#21D3C9', glyph: '#' },
+};
+
+export function groundKind(kind) {
+  return GROUND_KIND[kind] || GROUND_KIND.civic;
+}
+
+// Severity 0..3 -> label, for the detail panel / list. Mirrors the air severity ramp idea.
+export const GROUND_SEVERITY = ['INFO', 'MINOR', 'MODERATE', 'MAJOR'];

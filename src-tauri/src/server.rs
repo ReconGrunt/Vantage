@@ -87,6 +87,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/atc", get(proxy::atc::list))
         .route("/api/atc/{feed}", get(proxy::atc::stream))
         .route("/api/weather", get(proxy::weather::handler))
+        .route("/api/incidents", get(proxy::incidents::handler))
+        .route("/api/cameras", get(proxy::cameras::handler))
         .route("/api/tile/{style}/{z}/{x}/{y}", get(proxy::tile::handler))
         .route("/api/health", get(proxy::health::handler))
         .fallback(static_assets::serve)

@@ -155,6 +155,9 @@ public/js/clouds.js      live-weather cloud decks
 public/js/fisheye.js     180° fisheye dome-master projection
 public/js/ceiling-brush.js  paint-to-reveal custom ceiling-shape mask
 public/js/radar.js       tactical top-down PPI scope (tracks, rings, sweep, track list)
+public/js/city.js        Ground/City domain map (incidents + hotspots + public cameras)
+public/js/hotspots.js    client-side hotspot (kernel-density) engine for the city view
+server/sources/          pluggable Ground/City feed adapters (CAD/911, 311, NWS, USGS, cameras; opt-in gray)
 public/js/atc.js         live ATC audio (LiveATC) — single-stream resolver + voice activity
 public/js/towers.js      nearby ATC facilities placed on the horizon
 public/js/dashboard.js   "Arrange" mode — drag/resize widgets per view
@@ -187,6 +190,68 @@ public/js/main.js        scene, camera, controls, render loop, WebXR
 - **Arrange mode** — drag / resize / show-hide any on-screen widget on a snap grid, saved
   per view (hit **Arrange layout**, or press **E**).
 
+## Ground / City domain — the all-domain picture extends to the street
+
+Vantage is a **multi-domain common operating picture**. Alongside the Air/Sky domain it now
+has a **Ground / City** view (the **City** button, or `?display=city`): a top-down geographic
+map of what's happening on the ground right now, fusing many **free, public** feeds into live
+**hotspots**, an event list, and clickable public cameras.
+
+- **Live incidents** — official **CAD/911 dispatch + crime + 311** open data (Seattle Fire,
+  SF Police/Fire real-time, DC MPD, Chicago, Cincinnati, NYC), normalized into one Event
+  model and classified by kind (fire · medical · police · traffic · hazard · civic).
+- **Hazards & natural events** — **NWS** alerts, **USGS** quakes + volcanoes, **NWS storm
+  reports** (IEM), **NASA EONET**, **GDACS** global disasters, and **NWPS** flood gauges — all free, no key.
+- **Public cameras** — officially-published DOT cameras (**Caltrans** CWWP2, **NYC DOT**),
+  click a pin for a live snapshot. **No private/unsecured cameras — ever.**
+- **Hotspots** — a client-side kernel-density engine (`public/js/hotspots.js`) ranks activity
+  by **severity × recency × density**, so a working fire from minutes ago outweighs a hundred
+  day-old calls. The heat overlay + "top hotspots" board update on every poll, not per frame.
+- **Honest feed health** — a per-source status list shows which feeds are live, empty, or
+  offline right now (the same no-theatre ethos as the radar link-health strip).
+
+Feeds auto-activate by location (live CAD/911 where a city publishes it). Adding a feed is
+**one file**: each source is a small **adapter** in `server/sources/*` that turns an upstream
+record into the shared Event/Camera model and **degrades to empty on failure** — one dead
+feed never breaks the map. The same two `/api/incidents` + `/api/cameras` routes are mirrored
+in the native Rust proxy (a keyless subset) and guarded by the contract smoke test.
+
+### Opt-in sources (default OFF)
+
+Snap Map, Citizen, PulsePoint, scanner and social have no official free (mappable) feed, so
+they're **opt-in, pluggable adapters** — enable with `VANTAGE_ENABLE_CITIZEN=1`,
+`VANTAGE_ENABLE_SNAPMAP=1`, `VANTAGE_ENABLE_PULSEPOINT=1` (+ `VANTAGE_PULSEPOINT_AGENCIES=…`),
+`VANTAGE_ENABLE_SCANNER=1` (+ `VANTAGE_SCANNER_SYSTEMS=…`), or `VANTAGE_BLUESKY_QUERY="<place>"`
+(a free, unauthenticated Bluesky search). They stay strictly **place/event-centric**:
+aggregate activity at a location, never a person.
+
+### Free-key feeds (set an env var to activate)
+
+Trivially-free keys unlock national/global breadth. Each stays **off** until its key is set;
+`GET /api/sources` (and the City **feeds** panel) shows every feed's state — live, `key`, or `opt-in`.
+
+| Feed | Adds | Env var | Where |
+|---|---|---|---|
+| EPA AirNow | Air-quality (AQI) hazards, US | `AIRNOW_KEY` | airnowapi.org |
+| NASA FIRMS | Wildfire thermal hotspots, global | `FIRMS_MAP_KEY` | firms.modaps.eosdis.nasa.gov |
+| Windy Webcams | Global public webcams | `WINDY_KEY` | api.windy.com |
+| WSDOT | Washington traffic alerts + cameras | `WSDOT_KEY` | wsdot.wa.gov |
+| 511 SF Bay | Bay Area traffic incidents / closures | `FIVE11_SF_TOKEN` | 511.org/open-data |
+| Ticketmaster | Public events (crowd context) | `TICKETMASTER_KEY` | developer.ticketmaster.com |
+| Socrata | *(optional)* lifts the anonymous rate limit | `SOCRATA_APP_TOKEN` | portal dev settings |
+
+Keyless additions shipped this phase (no key needed): **FL511** (Florida DOT cameras) and
+**TfL JamCams** (London traffic cameras — an optional `TFL_APP_KEY` just lifts the rate).
+
+### Guardrails (non-negotiable)
+
+1. **Public / authorized feeds only** — official agency feeds, legal aggregators, open APIs.
+   Never unauthorized access to private or unsecured cameras, never auth-bypass or
+   ToS-circumvention. The camera-image proxy resolves an **id against the server's own
+   catalog**, never a caller-supplied URL (no open proxy / SSRF surface).
+2. **Places & events, never persons** — the picture is of the *city* (incidents, hazards,
+   hotspots), not any individual. Social/place-heat sources are ingested as aggregates only.
+
 ## One command menu, every view
 
 Vantage drives every view from a **single command menu** — one tactical panel
@@ -203,6 +268,7 @@ panel, or via URL for kiosk auto-launch:
 | Fisheye dome 180° | **True dome master** — projector straight up at a flat ceiling; zenith = centre, horizon = disc edge (correct on a curved planetarium dome) | `?display=fisheye` |
 | Free look | A normal screen — drag to look around | `?display=free` |
 | Tactical radar | Top-down geographic PPI scope: ownship centred, North up, live tracks by real lat/lon, range rings, sweep, MIL-STD-2525 tracks + track list | `?display=radar` |
+| City activity | Ground/City common-operating-picture: live incidents, hazards, hotspots + public cameras on a geo map, with a per-source feed-health readout | `?display=city` (e.g. `&lat=37.78&lon=-122.42`) |
 
 - **North at top** slider aligns the projection to your room (`&north=90`).
 - **Fullscreen / kiosk** hides the UI; add `&kiosk` to the URL to start hidden.

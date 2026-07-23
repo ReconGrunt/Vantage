@@ -6,6 +6,7 @@
   <title>Vantage · Air — Airspace &amp; Sky Situational Awareness</title>
   <link rel="stylesheet" href="css/style.css" />
   <link rel="stylesheet" href="css/radar.css" />
+  <link rel="stylesheet" href="css/city.css" />
   <script type="importmap">
   {
     "imports": {
@@ -37,6 +38,11 @@
        tracks, a track list and status strip. Shown only in radar mode. See js/radar.js. -->
   <canvas id="radar"></canvas>
 
+  <!-- Ground/City domain: a top-down geographic common-operating-picture of live
+       incidents, hazards, hotspots and public cameras. Shown only in city mode. See
+       js/city.js. -->
+  <canvas id="city"></canvas>
+
   <div id="panel">
     <div class="panel-head">
       <div class="brand">
@@ -65,6 +71,7 @@
           <button type="button" class="unit-btn" data-mode="fisheye">Fisheye</button>
           <button type="button" class="unit-btn" data-mode="free">Free look</button>
           <button type="button" class="unit-btn" data-mode="radar">Radar</button>
+          <button type="button" class="unit-btn" data-mode="city">City</button>
         </div>
       </section>
 
@@ -126,6 +133,67 @@
           <button type="button" id="rdr-pick-btn">Pick location on map</button>
         </div>
         <p class="hint">Top-down geographic scope: ownship centred, North up, live tracks by true lat/lon. Pick a range ring, add a satellite/terrain basemap, or click the map to reposition.</p>
+      </section>
+
+      <!-- City (ground) controls — shown only when View = City. Drives the CityRenderer. -->
+      <section data-view="city">
+        <h2>Ground layers <span class="count">activity</span></h2>
+        <div class="chips">
+          <label><input type="checkbox" data-citylayer="fire" checked /> Fire</label>
+          <label><input type="checkbox" data-citylayer="medical" checked /> Medical</label>
+          <label><input type="checkbox" data-citylayer="police" checked /> Police</label>
+          <label><input type="checkbox" data-citylayer="traffic" checked /> Traffic</label>
+          <label><input type="checkbox" data-citylayer="hazard" checked /> Hazard</label>
+          <label><input type="checkbox" data-citylayer="quake" checked /> Quake</label>
+          <label><input type="checkbox" data-citylayer="weather" checked /> Weather</label>
+          <label><input type="checkbox" data-citylayer="fire-wildland" checked /> Wildfire</label>
+          <label><input type="checkbox" data-citylayer="social" checked /> Social</label>
+          <label><input type="checkbox" data-citylayer="civic" checked /> Civic / 311</label>
+          <label><input type="checkbox" data-citylayer="outage" checked /> Outage</label>
+        </div>
+        <label class="row"><input type="checkbox" id="city-cams" checked /> Public cameras</label>
+        <label class="row"><input type="checkbox" id="city-heat" checked /> Hotspot heat overlay</label>
+      </section>
+
+      <section data-view="city">
+        <h2>City scope</h2>
+        <label class="row sub">Radius (km)</label>
+        <div class="seg3" id="cty-range-seg">
+          <button type="button" class="unit-btn" data-km="5">5</button>
+          <button type="button" class="unit-btn" data-km="10">10</button>
+          <button type="button" class="unit-btn active" data-km="25">25</button>
+          <button type="button" class="unit-btn" data-km="50">50</button>
+          <button type="button" class="unit-btn" data-km="100">100</button>
+        </div>
+        <label class="row sub">Time window</label>
+        <div class="btn-row" id="cty-window-seg">
+          <button type="button" class="unit-btn" data-win="60">1h</button>
+          <button type="button" class="unit-btn" data-win="360">6h</button>
+          <button type="button" class="unit-btn active" data-win="1440">24h</button>
+          <button type="button" class="unit-btn" data-win="0">All</button>
+        </div>
+        <label class="row sub">Basemap</label>
+        <div class="btn-row" id="cty-basemap-seg">
+          <button type="button" class="unit-btn" data-bm="none">None</button>
+          <button type="button" class="unit-btn active" data-bm="sat">Satellite</button>
+          <button type="button" class="unit-btn" data-bm="terrain">Terrain</button>
+        </div>
+        <div class="btn-row">
+          <button type="button" id="cty-recenter-btn">Recentre</button>
+          <button type="button" id="cty-pick-btn">Pick location on map</button>
+        </div>
+        <p class="hint">A live ground picture near you — incidents, hazards, traffic and public cameras fused into hotspots. Feeds auto-activate by city (live CAD/911 where published). Place/event-centric only, never person-tracking.</p>
+      </section>
+
+      <section data-view="city">
+        <h2>City feeds <span class="count">health</span></h2>
+        <div id="cty-health"><span class="hint">— standby —</span></div>
+        <p class="hint">Honest per-source status — which feeds are live, empty, or offline right now. “opt-in” marks unofficial sources you enabled.</p>
+      </section>
+
+      <section data-view="city">
+        <h2>City incidents <span class="count" id="cty-log-count">log</span></h2>
+        <div id="cty-log" class="incident-list"><span class="hint">— none yet —</span></div>
       </section>
 
       <section data-view="dome">
