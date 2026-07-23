@@ -113,6 +113,9 @@ async function main() {
   console.log('geolocate (network location fallback)');
   await checkJson('geolocate', '/api/geolocate');
 
+  console.log('prefs (origin-independent local persistence)');
+  await checkJson('prefs', '/api/prefs');
+
   console.log('flightinfo');
   await checkJson('flightinfo', '/api/flightinfo?callsign=UAL123&icao24=a1b2c3');
 

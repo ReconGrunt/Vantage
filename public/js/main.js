@@ -915,16 +915,47 @@ function loadObserver() {
   } catch { /* ignore */ }
   return { lat: 40.7128, lon: -74.0060, alt: 10 };
 }
-function saveObserver(o) { localStorage.setItem('observer', JSON.stringify(o)); }
+// Persist BOTH locally (fast, synchronous seed) and to the backend. localStorage alone is
+// keyed by ORIGIN, and the desktop shell falls back to an ephemeral port when 47615 is
+// taken — so the origin changed between launches and the saved location silently vanished,
+// dropping the app back to the default every time. The backend copy is origin-independent.
+// It is written to the user's home config dir, never into the repo.
+function saveObserver(o) {
+  try { localStorage.setItem('observer', JSON.stringify(o)); } catch { /* quota */ }
+  fetch('/api/prefs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ observer: o }),
+  }).catch(() => { /* local copy still stands */ });
+}
 
-if (!localStorage.getItem('observer') && navigator.geolocation) {
+// Boot order: localStorage seeds state.observer synchronously; then the backend copy wins
+// if it has one (it survives port/origin changes); only if NEITHER exists do we ask the
+// device for a first-run fix.
+(async () => {
+  let restored = null;
+  try {
+    const d = await (await fetch('/api/prefs')).json();
+    const o = d?.prefs?.observer;
+    if (o && isFinite(o.lat) && isFinite(o.lon)) restored = o;
+  } catch { /* backend prefs unavailable — fall through */ }
+
+  if (restored) {
+    const cur = state.observer;
+    if (Math.abs(restored.lat - cur.lat) > 1e-6 || Math.abs(restored.lon - cur.lon) > 1e-6) {
+      setObserver(restored);
+    }
+    return;
+  }
+  if (localStorage.getItem('observer')) return;  // local seed already applied
+  if (!navigator.geolocation) return;
   navigator.geolocation.getCurrentPosition((pos) => {
     const obs = { lat: pos.coords.latitude, lon: pos.coords.longitude, alt: pos.coords.altitude || 10 };
-    state.observer = obs; saveObserver(obs); ui.setObserver(obs); refreshAircraft();
+    setObserver(obs);
   }, () => {
     // GPS denied/unavailable on first run: we silently keep the default location
     // (loadObserver()'s NYC fallback) so the dome still runs. Hint the user they
     // can set it manually under "Your location" rather than leaving them guessing.
     ui.status('Location unavailable — using default (set it under “Your location”)');
   }, { timeout: 8000 });
-}
+})();

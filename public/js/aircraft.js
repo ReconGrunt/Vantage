@@ -451,13 +451,19 @@ export class AircraftLayer {
       const aheadGeo = deadReckon(displayed, fwdSpeed, s.heading || 0, 2.5);
       const aheadLook = lookAngles(eye, aheadGeo);
       const aheadPos = domePosition(aheadLook.azimuth, aheadLook.altitude, SHELLS.aircraft);
-      // Ceiling / fisheye (looking UP through the roof): the belly must face the viewer at
-      // EVERY elevation, so "up" is the RADIAL from the dome centre (pos). This presents a
-      // clean top-down planform overhead and removes the edge-on / rolled look off-zenith
-      // that wide-FOV perspective was exaggerating. Free look keeps world-up level flight.
-      if (this.ceilingMode) _up.copy(pos).normalize(); else _up.set(0, 1, 0);
+      // LEVEL FLIGHT IN EVERY VIEW. "Up" is world up and the nose follows the HORIZONTAL
+      // track, exactly as the block above describes. A previous revision tied "up" to the
+      // radial in ceiling/fisheye, but that is wrong for a camera looking straight up: it
+      // holds the wing-plane perpendicular to the radial, so any aircraft off the zenith
+      // renders nearly edge-on — planes appeared to fly sideways and not along their path.
+      //
+      // Horizontalising the forward vector also makes orientation STABLE overhead. The
+      // radial version swung violently as a plane crossed the zenith (dome azimuth flips
+      // ~180°), which the turn-rate clamp below could only smear out; the horizontal track
+      // barely changes there, because the aircraft's real heading barely changes.
+      _up.set(0, 1, 0);
       _fwd.copy(aheadPos).sub(pos);
-      if (!this.ceilingMode) _fwd.y = 0;               // free look: horizontal heading only
+      _fwd.y = 0;                                       // nose follows the horizontal track
       if (_fwd.lengthSq() > 1e-8) {
         _fwd.normalize();
         _right.crossVectors(_up, _fwd).normalize();

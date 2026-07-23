@@ -16,6 +16,8 @@
 import express from 'express';
 import path from 'node:path';
 import dns from 'node:dns';
+import os from 'node:os';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 // Ground/City domain: fused public-safety / hazard / camera feeds (server/sources/*).
 import { collect, resolveConfig, cameraIndex, listAdapters } from './sources/registry.js';
@@ -547,6 +549,34 @@ app.get('/api/geolocate', async (_req, res) => {
   const stale = cache.get(key);
   if (stale) return res.json({ ...stale.data, stale: true });
   res.status(502).json({ lat: null, lon: null, accuracyKm: null, city: null, region: null, source: null, error: 'geolocation unavailable' });
+});
+
+// --- user preferences (origin-independent local persistence) -----------------------
+// The UI used to persist the observer in localStorage alone, which is keyed by ORIGIN.
+// The desktop shell falls back to an ephemeral port when 47615 is taken, so the origin
+// changed between launches and the saved location silently vanished — the app kept
+// reopening at the default. Prefs are therefore stored by the backend too.
+//
+// PRIVACY: this file lives in the user's home config dir, deliberately OUTSIDE the repo,
+// so real coordinates can never be committed or pushed.
+const PREFS_DIR = path.join(os.homedir(), '.vantage');
+const PREFS_FILE = path.join(PREFS_DIR, 'prefs.json');
+function readPrefs() {
+  try { return JSON.parse(fs.readFileSync(PREFS_FILE, 'utf8')) || {}; } catch { return {}; }
+}
+function writePrefs(p) {
+  try {
+    fs.mkdirSync(PREFS_DIR, { recursive: true });
+    fs.writeFileSync(PREFS_FILE, JSON.stringify(p));
+    return true;
+  } catch { return false; }
+}
+app.get('/api/prefs', (_req, res) => res.json({ prefs: readPrefs() }));
+app.post('/api/prefs', express.json({ limit: '8kb' }), (req, res) => {
+  const patch = req.body && typeof req.body === 'object' ? req.body : {};
+  const next = { ...readPrefs(), ...patch };
+  const saved = writePrefs(next);
+  res.json({ prefs: next, saved });
 });
 
 // Adapter catalog: which Ground/City feeds exist + their resolved on/off state (live,

@@ -9,6 +9,7 @@ pub mod flightinfo;
 pub mod geolocate;
 pub mod health;
 pub mod incidents;
+pub mod prefs;
 pub mod sources;
 pub mod tile;
 pub mod tle;
