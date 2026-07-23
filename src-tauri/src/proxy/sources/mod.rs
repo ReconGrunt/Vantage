@@ -10,6 +10,7 @@
 pub mod arcgis;
 pub mod cams;
 pub mod hazards;
+pub mod road;
 pub mod socrata;
 
 use serde_json::{json, Value};

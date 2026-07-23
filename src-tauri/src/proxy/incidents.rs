@@ -23,7 +23,7 @@ use futures_util::future::join_all;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::proxy::sources::{arcgis, hazards, socrata, Bbox};
+use crate::proxy::sources::{arcgis, hazards, road, socrata, Bbox};
 use crate::server::{unix_now, AppState, Cached};
 
 #[derive(Deserialize)]
@@ -83,6 +83,9 @@ pub async fn handler(State(st): State<AppState>, Query(q): Query<Q>) -> Response
     futs.push(Box::pin(async move { ("eonet", hazards::eonet(stref, bref).await) }));
     futs.push(Box::pin(async move { ("gdacs", hazards::gdacs(stref, bref).await) }));
     futs.push(Box::pin(async move { ("nwps", hazards::nwps(stref, bref).await) }));
+    // real-time California road activity (the live backbone for LA)
+    futs.push(Box::pin(async move { ("caltrans-lcs", road::lcs(stref, bref).await) }));
+    futs.push(Box::pin(async move { ("caltrans-cms", road::cms(stref, bref).await) }));
 
     let results = join_all(futs).await;
 

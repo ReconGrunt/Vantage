@@ -30,12 +30,17 @@ import iem from './iem.js';
 import eonet from './eonet.js';
 import gdacs from './gdacs.js';
 import nwps from './nwps.js';
+// Real-time California road activity (the live backbone for LA, which publishes no
+// real-time police/fire dispatch feed).
+import caltransLcs from './caltrans-lcs.js';
+import caltransCms from './caltrans-cms.js';
 import bluesky from './gray/bluesky.js';
 
 const ADAPTERS = [
   // --- keyless, official / legal-aggregator, DEFAULT ON ---
   ...socrata, ...arcgis, ...nws, ...usgs,           // incidents (+ FL511 cameras via arcgis)
   ...iem, ...eonet, ...gdacs, ...nwps,              // more keyless hazard / natural-event feeds
+  ...caltransLcs, ...caltransCms,                    // real-time CA road closures + message signs
   ...caltrans, ...nyctmc, ...tfl,                    // cameras
   // --- Phase 2: keyed-but-free, activate by setting the env key (off otherwise) ---
   ...airquality, ...firms, ...windy, ...wsdot, ...open511sf, ...events,

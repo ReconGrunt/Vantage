@@ -159,7 +159,14 @@ export class CityRenderer {
   _recompute() {
     const now = Date.now();
     const cutoff = this.windowMin > 0 ? now - this.windowMin * 60_000 : 0;
-    this._visEvents = this.events.filter((e) => this.layers[e.kind] !== false && (e.ts || now) >= cutoff);
+    this._visEvents = this.events.filter((e) => {
+      if (this.layers[e.kind] === false) return false;
+      if ((e.ts || now) >= cutoff) return true;
+      // Ongoing conditions stay visible while still in effect. A road closure that began
+      // weeks ago but runs until tomorrow is live RIGHT NOW — filtering it out by start
+      // time would hide active closures from any short window.
+      return e.expiresTs != null && e.expiresTs > now;
+    });
     const kinds = new Set(Object.keys(this.layers).filter((k) => this.layers[k]));
     const halfLife = this.windowMin > 0 ? Math.min(180, Math.max(15, this.windowMin / 8)) : 120;
     this.hotspots = computeHotspots(this._visEvents, { now, halfLifeMin: halfLife, kinds });
