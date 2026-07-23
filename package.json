@@ -1,7 +1,7 @@
 {
   "name": "vantage-web",
   "version": "0.1.0",
-  "description": "Vantage · Air — all-domain situational awareness (Air/Sky domain): real aircraft, satellites, planets, weather and stars at their true sky positions. This package is the web/dev backend; the native Windows app lives in src-tauri/.",
+  "description": "Vantage — a real-time, multi-domain common operating picture from free, no-key data: an Air/Sky domain (real aircraft, satellites, planets, weather and stars at their true positions) and a Ground/City domain (live incidents, hazards, traffic and public cameras fused into hotspots). This package is the web/dev backend; the native Windows app lives in src-tauri/.",
   "type": "module",
   "scripts": {
     "start": "node server/index.js",

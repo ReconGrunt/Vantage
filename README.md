@@ -1,10 +1,19 @@
-# Vantage · Air
+# Vantage
 
-**Vantage** is a real-time common-operating-picture platform; this is its **Air / Sky**
-domain. It projects the **real sky above your location** — aircraft, satellites, planets,
-the Sun, the Moon, the **Milky Way** and live **meteor showers** — each placed at its true
-azimuth and altitude, from **free, no-key data** (real callsigns, real NORAD objects, real
-ephemerides). Point a projector straight up and it becomes an immersive ceiling.
+**Vantage** is a real-time, **multi-domain common operating picture** built entirely on
+**free, no-key data**. Two domains run from one frontend codebase:
+
+- **Air / Sky** — the **real sky above your location**: aircraft, satellites, planets, the
+  Sun, the Moon, the **Milky Way** and live **meteor showers**, each placed at its true
+  azimuth and altitude (real callsigns, real NORAD objects, real ephemerides), plus a
+  top-down tactical **radar** scope. Point a projector straight up and it becomes an
+  immersive ceiling.
+- **Ground / City** — a live **city activity map**: incidents, hazards, traffic and public
+  cameras from dozens of free public feeds, fused into **hotspots** and an event feed
+  (`?display=city`; see the [Ground / City domain](#ground--city-domain--the-all-domain-picture-extends-to-the-street) section below).
+
+Most of this README documents the Air domain (the original core); the Ground/City domain
+has its own section further down.
 
 Vantage ships two ways from **one frontend codebase**:
 
