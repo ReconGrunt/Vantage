@@ -31,5 +31,5 @@ export default [{
   id: 'bluesky', category: 'incidents', kinds: ['social'], keyless: true, optin: true,
   label: 'Bluesky social chatter', attribution: 'Bluesky (aggregate place-heat)',
   enabled: (cfg) => !!cfg.blueskyQuery,
-  fetch: (b, c) => fetchBsky(b, c).catch(() => []),
+  fetch: (b, c) => fetchBsky(b, c),
 }];

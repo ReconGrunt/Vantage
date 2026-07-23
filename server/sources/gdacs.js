@@ -34,5 +34,5 @@ export default [{
   id: 'gdacs', category: 'incidents', kinds: ['hazard', 'quake', 'weather'], keyless: true,
   label: 'GDACS global disasters', attribution: 'GDACS · UN/EC',
   enabled: () => true,
-  fetch: (b) => fetchGdacs(b).catch(() => []),
+  fetch: (b) => fetchGdacs(b),
 }];

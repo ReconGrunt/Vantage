@@ -39,5 +39,5 @@ export default [{
   id: 'iem-lsr', category: 'incidents', kinds: ['weather', 'hazard'], keyless: true,
   label: 'NWS storm reports (IEM)', attribution: 'Iowa Environmental Mesonet · NWS',
   enabled: () => true,
-  fetch: (b) => fetchIem(b).catch(() => []),
+  fetch: (b) => fetchIem(b),
 }];

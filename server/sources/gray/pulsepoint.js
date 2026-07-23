@@ -22,8 +22,14 @@ function evpKey(pass, salt, keyLen) {
   return key.subarray(0, keyLen);
 }
 
-// The passphrase is assembled from "CommonIncidents" exactly as PulsePoint's obfuscated
-// client does — encoded as logic (not a copied literal) so it tracks their scheme.
+// The passphrase is assembled from "CommonIncidents" following PulsePoint's obfuscated
+// client, encoded as logic rather than a copied literal.
+//
+// KNOWN BROKEN: verified against a live payload, this derivation yields OpenSSL
+// "bad decrypt" — so the passphrase is wrong and this adapter returns no data. It is
+// deliberately left un-swallowed so it reports ok:false ("bad decrypt") in the feed-health
+// panel instead of masquerading as an empty-but-healthy feed. Fix the derivation (or drop
+// the adapter) before relying on it.
 function passphrase() {
   const t = 'CommonIncidents';
   return t[13] + t[1] + t[2] + 'brady' + '5' + 'r' + t[11] + t[1] + t[12] + t[5] + 'gattai';
@@ -74,6 +80,6 @@ export default [{
   optin: true, attribution: 'PulsePoint (in-the-clear · place-only)', label: 'PulsePoint fire/EMS',
   enabled: (cfg) => !!cfg?.enablePulsepoint && (cfg?.pulsepointAgencies?.length > 0),
   fetch: (bbox, cfg) =>
-    Promise.all((cfg?.pulsepointAgencies || []).map((a) => fetchAgency(a, bbox).catch(() => [])))
+    Promise.all((cfg?.pulsepointAgencies || []).map((a) => fetchAgency(a, bbox)))
       .then((x) => x.flat()),
 }];

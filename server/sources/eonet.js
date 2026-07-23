@@ -37,5 +37,5 @@ export default [{
   id: 'eonet', category: 'incidents', kinds: ['fire-wildland', 'hazard', 'weather'], keyless: true,
   label: 'NASA EONET natural events', attribution: 'NASA EONET',
   enabled: () => true,
-  fetch: (b) => fetchEonet(b).catch(() => []),
+  fetch: (b) => fetchEonet(b),
 }];

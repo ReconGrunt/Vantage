@@ -517,6 +517,38 @@ app.get('/api/camimg/:id', async (req, res) => {
   }
 });
 
+// Coarse network (IP-based) geolocation. The desktop shell runs in WebView2, which DENIES
+// the browser Geolocation API unless the host app grants the permission — so "Use my
+// location" dead-ends there. This gives the client a city-level fallback, which is exactly
+// the granularity a city activity map needs. Free, no key; cached so we're a polite client.
+const GEO_PROVIDERS = [
+  { name: 'ipwho.is', url: 'https://ipwho.is/' },
+  { name: 'ipapi.co', url: 'https://ipapi.co/json/' },
+];
+app.get('/api/geolocate', async (_req, res) => {
+  const key = 'geo:self';
+  const cached = getCached(key);
+  if (cached) return res.json({ ...cached, cached: true });
+  for (const p of GEO_PROVIDERS) {
+    try {
+      const d = await fetchJson(p.url);
+      const lat = numOrNull(d.latitude), lon = numOrNull(d.longitude);
+      if (lat == null || lon == null) continue;
+      const out = {
+        lat, lon, accuracyKm: 25,
+        city: d.city || null,
+        region: d.region || d.region_name || null,
+        source: p.name,
+      };
+      setCached(key, out, 30 * 60 * 1000);
+      return res.json(out);
+    } catch { /* try the next provider */ }
+  }
+  const stale = cache.get(key);
+  if (stale) return res.json({ ...stale.data, stale: true });
+  res.status(502).json({ lat: null, lon: null, accuracyKm: null, city: null, region: null, source: null, error: 'geolocation unavailable' });
+});
+
 // Adapter catalog: which Ground/City feeds exist + their resolved on/off state (live,
 // key-required, or opt-in), so the City view can show the full menu — not just what ran.
 app.get('/api/sources', (_req, res) => res.json({ sources: listAdapters(CITY_CFG) }));

@@ -48,5 +48,5 @@ export default [{
   id: 'nws-alerts', category: 'incidents', kinds: ['weather', 'hazard'], keyless: true,
   attribution: 'US National Weather Service · api.weather.gov', label: 'NWS active alerts',
   enabled: () => true,
-  fetch: (bbox) => fetchNws(bbox).catch(() => []),
+  fetch: (bbox) => fetchNws(bbox),
 }];

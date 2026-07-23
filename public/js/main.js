@@ -335,6 +335,10 @@ function setObserver(obs) {
   refreshWeather();
   rebuildTowers();
   atc.setObserver(obs.lat, obs.lon); // drop ATC feeds from the old location so comms follow you
+  // Re-anchor both map views on the new location (clears any manual pan) BEFORE the data
+  // lands, so the incoming events draw where the user is actually looking.
+  radar?.setObserver(obs);
+  city?.setObserver(obs);
   if (state.display === 'city') refreshCity(true); // city feeds follow you too
 }
 

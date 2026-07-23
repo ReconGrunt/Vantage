@@ -27,5 +27,5 @@ export default [{
   id: 'tfl-jamcam', category: 'cameras', kinds: ['camera'], keyless: true,
   label: 'TfL JamCams (London)', attribution: 'Powered by TfL Open Data',
   enabled: () => true,
-  fetch: (b, c) => fetchTfl(b, c).catch(() => []),
+  fetch: (b, c) => fetchTfl(b, c),
 }];

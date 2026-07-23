@@ -101,5 +101,5 @@ export default DATASETS.map((ds) => ({
   attribution: ds.attribution,
   label: ds.label,
   enabled: () => true,
-  fetch: (bbox, cfg) => fetchSocrata(ds, bbox, cfg).catch(() => []),
+  fetch: (bbox, cfg) => fetchSocrata(ds, bbox, cfg),
 }));

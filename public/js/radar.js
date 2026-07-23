@@ -140,7 +140,16 @@ export class RadarRenderer {
       this._needsFit = true;
     }
   }
-  setObserver(o) { if (o) this.observer = o; }
+  // Same re-anchor rule as the city scope: a new location clears any manual pan so the
+  // scope actually follows you instead of staying where you last dragged it.
+  setObserver(o) {
+    if (!o) return;
+    const moved = !this.observer
+      || Math.abs(o.lat - this.observer.lat) > 1e-6
+      || Math.abs(o.lon - this.observer.lon) > 1e-6;
+    this.observer = o;
+    if (moved) { this.panned = false; this._needsFit = true; }
+  }
   setRange(nm) { this._applyRange(nm); }
   setSweep(on) {
     this.sweepOn = on;

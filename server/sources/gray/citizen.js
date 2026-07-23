@@ -48,5 +48,5 @@ export default [{
   id: 'citizen', category: 'incidents', kinds: ['police', 'fire', 'medical', 'hazard'], keyless: true,
   optin: true, attribution: 'Citizen (unofficial · place-only)', label: 'Citizen incidents',
   enabled: (cfg) => !!cfg?.enableCitizen,
-  fetch: (bbox) => fetchCitizen(bbox).catch(() => []),
+  fetch: (bbox) => fetchCitizen(bbox),
 }];

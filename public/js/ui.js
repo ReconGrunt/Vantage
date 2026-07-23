@@ -299,13 +299,36 @@ export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, 
     if (isFinite(lat) && isFinite(lon)) onObserverChange({ lat, lon, alt });
   });
 
+  // "Use my location": try the precise device fix first, then fall back to a coarse
+  // network estimate. The desktop shell is WebView2, which denies the Geolocation API
+  // unless the host grants the permission — without the fallback the button dead-ends
+  // there. Always report the REAL reason instead of a blanket "denied", and always pass a
+  // timeout (the old call had none, so it could sit on "Locating…" forever).
   $('geo-btn').addEventListener('click', () => {
-    if (!navigator.geolocation) return status('Geolocation unavailable');
+    const viaNetwork = () => fetch('/api/geolocate')
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d || !isFinite(d.lat) || !isFinite(d.lon)) return status('Location unavailable');
+        const o = { lat: d.lat, lon: d.lon, alt: 10 };
+        fillLoc(o); onObserverChange(o);
+        status(`Location ≈ ${d.city || 'network estimate'}${d.region ? ', ' + d.region : ''}`);
+      })
+      .catch(() => status('Location unavailable'));
+
+    if (!navigator.geolocation) return viaNetwork();
     status('Locating…');
-    navigator.geolocation.getCurrentPosition((pos) => {
-      const o = { lat: pos.coords.latitude, lon: pos.coords.longitude, alt: pos.coords.altitude || 10 };
-      fillLoc(o); onObserverChange(o); status('Live');
-    }, () => status('Location denied'));
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const o = { lat: pos.coords.latitude, lon: pos.coords.longitude, alt: pos.coords.altitude || 10 };
+        fillLoc(o); onObserverChange(o); status('Live');
+      },
+      (err) => {
+        const why = err?.code === 1 ? 'permission denied' : err?.code === 3 ? 'timed out' : 'unavailable';
+        status(`Device location ${why} — using network estimate…`);
+        viaNetwork();
+      },
+      { timeout: 8000, maximumAge: 60_000, enableHighAccuracy: false },
+    );
   });
 
   // collapse panel

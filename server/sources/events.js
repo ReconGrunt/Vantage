@@ -30,5 +30,5 @@ export default [{
   id: 'ticketmaster', category: 'incidents', kinds: ['civic'], keyless: false,
   label: 'Ticketmaster events', attribution: 'Ticketmaster Discovery',
   enabled: (cfg) => !!cfg.ticketmasterKey,
-  fetch: (b, c) => fetchTm(b, c).catch(() => []),
+  fetch: (b, c) => fetchTm(b, c),
 }];

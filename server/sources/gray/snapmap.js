@@ -47,5 +47,5 @@ export default [{
   id: 'snapmap', category: 'incidents', kinds: ['social'], keyless: true,
   optin: true, attribution: 'Snap Map (aggregate place-heat only)', label: 'Snap Map activity',
   enabled: (cfg) => !!cfg?.enableSnap,
-  fetch: (bbox, cfg) => fetchSnap(bbox, cfg).catch(() => []),
+  fetch: (bbox, cfg) => fetchSnap(bbox, cfg),
 }];

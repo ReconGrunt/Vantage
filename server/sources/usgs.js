@@ -49,8 +49,8 @@ async function fetchVolcano(bbox) {
 export default [
   { id: 'usgs-quake', category: 'incidents', kinds: ['quake'], keyless: true,
     attribution: 'USGS Earthquake Hazards Program', label: 'USGS earthquakes',
-    enabled: () => true, fetch: (bbox) => fetchQuakes(bbox).catch(() => []) },
+    enabled: () => true, fetch: (bbox) => fetchQuakes(bbox) },
   { id: 'usgs-volcano', category: 'incidents', kinds: ['hazard'], keyless: true,
     attribution: 'USGS Volcano Hazards Program', label: 'USGS volcano alerts',
-    enabled: () => true, fetch: (bbox) => fetchVolcano(bbox).catch(() => []) },
+    enabled: () => true, fetch: (bbox) => fetchVolcano(bbox) },
 ];

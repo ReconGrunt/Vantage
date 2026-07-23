@@ -28,5 +28,5 @@ export default [{
   id: 'windy-cam', category: 'cameras', kinds: ['camera'], keyless: false,
   label: 'Windy webcams', attribution: 'Windy Webcams',
   enabled: (cfg) => !!cfg.windyKey,
-  fetch: (bbox, cfg) => fetchWindy(bbox, cfg).catch(() => []),
+  fetch: (bbox, cfg) => fetchWindy(bbox, cfg),
 }];

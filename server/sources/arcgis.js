@@ -76,5 +76,5 @@ export default LAYERS.map((ds) => ({
   id: ds.id, category: ds.category, kinds: ds.kinds || ['civic'], keyless: true,
   attribution: ds.attribution, label: ds.label,
   enabled: () => true,
-  fetch: (bbox) => fetchArcgis(ds, bbox).catch(() => []),
+  fetch: (bbox) => fetchArcgis(ds, bbox),
 }));

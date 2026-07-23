@@ -110,6 +110,9 @@ async function main() {
   console.log('cameras (ground/city domain)');
   await checkJson('cameras', `/api/cameras?lat=${LAT}&lon=${LON}&radius=25`, 'cameras');
 
+  console.log('geolocate (network location fallback)');
+  await checkJson('geolocate', '/api/geolocate');
+
   console.log('flightinfo');
   await checkJson('flightinfo', '/api/flightinfo?callsign=UAL123&icao24=a1b2c3');
 

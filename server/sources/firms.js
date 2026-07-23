@@ -40,5 +40,5 @@ export default [{
   id: 'firms', category: 'incidents', kinds: ['fire-wildland'], keyless: false,
   label: 'NASA FIRMS wildfire', attribution: 'NASA FIRMS (VIIRS S-NPP)',
   enabled: (cfg) => !!cfg.firmsKey,
-  fetch: (bbox, cfg) => fetchFirms(bbox, cfg).catch(() => []),
+  fetch: (bbox, cfg) => fetchFirms(bbox, cfg),
 }];

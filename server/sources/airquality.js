@@ -31,5 +31,5 @@ export default [{
   id: 'airnow', category: 'incidents', kinds: ['hazard'], keyless: false,
   label: 'AirNow air quality', attribution: 'US EPA AirNow',
   enabled: (cfg) => !!cfg.airnowKey,
-  fetch: (bbox, cfg) => fetchAirNow(bbox, cfg).catch(() => []),
+  fetch: (bbox, cfg) => fetchAirNow(bbox, cfg),
 }];

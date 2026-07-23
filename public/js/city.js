@@ -115,7 +115,18 @@ export class CityRenderer {
     document.body.classList.toggle('city-on', on);
     if (on) { this.resize(); this._needsFit = true; this._recompute(); }
   }
-  setObserver(o) { if (o) this.observer = o; }
+  // A NEW location must re-anchor the view. Without this, any manual pan — dragging the
+  // map, clicking a hotspot, or just selecting an event in the list — latches `panned`,
+  // and render() then refuses to recentre, so the next city's events load but draw
+  // off-screen and get culled. That reads as "no refresh is happening".
+  setObserver(o) {
+    if (!o) return;
+    const moved = !this.observer
+      || Math.abs(o.lat - this.observer.lat) > 1e-6
+      || Math.abs(o.lon - this.observer.lon) > 1e-6;
+    this.observer = o;
+    if (moved) { this.panned = false; this._needsFit = true; this._lastChrome = 0; }
+  }
 
   setData({ events, cameras, sources, stale }) {
     if (Array.isArray(events)) this.events = events;
@@ -433,7 +444,28 @@ export class CityRenderer {
         + `<span class="data">${ageStr(Date.now() - e.ts)}</span>`
         + `<span class="data">${m.rangeKm.toFixed(1)}</span></div>`;
     }).join('');
-    this._elRows.innerHTML = rows || '<div class="cty-tl-empty">— NO EVENTS IN WINDOW —</div>';
+    this._elRows.innerHTML = rows || `<div class="cty-tl-empty">${this._emptyReason()}</div>`;
+  }
+
+  // Say WHY the list is empty. An empty map must never be ambiguous with a broken app:
+  // distinguish "no feed covers here" from "your time window hides them" from "you've
+  // panned away". Each case has a different fix, so name it.
+  _windowLabel() {
+    const w = this.windowMin;
+    return w === 0 ? 'all-time' : w >= 1440 ? `${Math.round(w / 1440)}d` : `${Math.round(w / 60)}h`;
+  }
+  _emptyReason() {
+    const total = this.events.length;
+    if (total === 0) {
+      const reporting = (this.sources || []).filter((s) => s.ok).length;
+      return reporting
+        ? '— no city incident feed covers this location —<span class="cty-sub">national hazard feeds + cameras only</span>'
+        : '— waiting for feeds —';
+    }
+    if (this._visEvents.length === 0) {
+      return `— ${total} events outside the ${this._windowLabel()} window —<span class="cty-sub">widen the time window to see them</span>`;
+    }
+    return '— events are outside the current view —<span class="cty-sub">hit Recentre</span>';
   }
 
   _updateDetail() {
@@ -485,12 +517,14 @@ export class CityRenderer {
       if (a.category === 'cameras') {
         if (a.enabled) { col = '#21D3C9'; note = 'cam'; } else if (a.keyed) { col = '#3a4652'; note = 'key'; } else { col = '#3a4652'; note = 'off'; }
       } else if (s && s.ok) { col = s.count ? '#3FCF6A' : '#7C8894'; note = String(s.count); }
+      else if (s && !s.ok) { col = '#FF3B47'; note = '✗'; }  // genuinely failed — say so
       else if (a.enabled) { col = '#FFB020'; note = '·'; }
       else if (a.keyed) { col = '#3a4652'; note = 'key'; }
       else if (a.optin) { col = '#3a4652'; note = 'opt-in'; }
       else { col = '#3a4652'; note = 'off'; }
       const tag = a.optin ? ' <em>opt-in</em>' : a.keyed ? ' <em>key</em>' : '';
-      return `<div class="cty-src"><span class="cty-src-dot" style="background:${col}"></span>`
+      const why = s && !s.ok && s.error ? ` title="${esc(s.error)}"` : '';
+      return `<div class="cty-src"${why}><span class="cty-src-dot" style="background:${col}"></span>`
         + `<span class="cty-src-id">${esc(a.label || a.id)}${tag}</span>`
         + `<span class="cty-src-n data">${note}</span></div>`;
     }).join('');

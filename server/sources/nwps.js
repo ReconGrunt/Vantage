@@ -32,5 +32,5 @@ export default [{
   id: 'nwps', category: 'incidents', kinds: ['hazard'], keyless: true,
   label: 'NWPS flood gauges', attribution: 'NOAA/NWS NWPS',
   enabled: () => true,
-  fetch: (b) => fetchNwps(b).catch(() => []),
+  fetch: (b) => fetchNwps(b),
 }];

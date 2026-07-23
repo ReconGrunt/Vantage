@@ -43,6 +43,6 @@ async function alerts(bbox, cfg) {
 }
 
 export default [
-  { id: 'wsdot-cam', category: 'cameras', kinds: ['camera'], keyless: false, label: 'WSDOT cameras (WA)', attribution: 'WSDOT', enabled: (cfg) => !!cfg.wsdotKey, fetch: (b, c) => cameras(b, c).catch(() => []) },
-  { id: 'wsdot-alerts', category: 'incidents', kinds: ['traffic'], keyless: false, label: 'WSDOT traffic alerts (WA)', attribution: 'WSDOT', enabled: (cfg) => !!cfg.wsdotKey, fetch: (b, c) => alerts(b, c).catch(() => []) },
+  { id: 'wsdot-cam', category: 'cameras', kinds: ['camera'], keyless: false, label: 'WSDOT cameras (WA)', attribution: 'WSDOT', enabled: (cfg) => !!cfg.wsdotKey, fetch: (b, c) => cameras(b, c) },
+  { id: 'wsdot-alerts', category: 'incidents', kinds: ['traffic'], keyless: false, label: 'WSDOT traffic alerts (WA)', attribution: 'WSDOT', enabled: (cfg) => !!cfg.wsdotKey, fetch: (b, c) => alerts(b, c) },
 ];

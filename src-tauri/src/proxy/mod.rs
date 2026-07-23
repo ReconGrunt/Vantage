@@ -6,6 +6,7 @@ pub mod aircraft;
 pub mod atc;
 pub mod cameras;
 pub mod flightinfo;
+pub mod geolocate;
 pub mod health;
 pub mod incidents;
 pub mod sources;

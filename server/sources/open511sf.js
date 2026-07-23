@@ -33,5 +33,5 @@ export default [{
   id: '511sfbay', category: 'incidents', kinds: ['traffic', 'civic'], keyless: false,
   label: '511 SF Bay traffic', attribution: '511.org · MTC',
   enabled: (cfg) => !!cfg.five11SfToken,
-  fetch: (b, c) => fetch511(b, c).catch(() => []),
+  fetch: (b, c) => fetch511(b, c),
 }];

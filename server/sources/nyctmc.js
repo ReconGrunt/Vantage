@@ -33,5 +33,5 @@ export default [{
   id: 'nyc-dot-cam', category: 'cameras', kinds: ['camera'], keyless: true,
   attribution: 'NYC DOT · nyctmc.org', label: 'NYC DOT cameras',
   enabled: () => true,
-  fetch: (bbox) => fetchNyc(bbox).catch(() => []),
+  fetch: (bbox) => fetchNyc(bbox),
 }];
