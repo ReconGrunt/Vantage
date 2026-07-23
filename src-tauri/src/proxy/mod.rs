@@ -8,6 +8,7 @@ pub mod cameras;
 pub mod flightinfo;
 pub mod health;
 pub mod incidents;
+pub mod sources;
 pub mod tile;
 pub mod tle;
 pub mod weather;

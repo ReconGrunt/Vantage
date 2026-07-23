@@ -222,8 +222,10 @@ map of what's happening on the ground right now, fusing many **free, public** fe
 Feeds auto-activate by location (live CAD/911 where a city publishes it). Adding a feed is
 **one file**: each source is a small **adapter** in `server/sources/*` that turns an upstream
 record into the shared Event/Camera model and **degrades to empty on failure** — one dead
-feed never breaks the map. The same two `/api/incidents` + `/api/cameras` routes are mirrored
-in the native Rust proxy (a keyless subset) and guarded by the contract smoke test.
+feed never breaks the map. Every keyless adapter is mirrored **feed-for-feed** in the native
+Rust proxy (`src-tauri/src/proxy/sources/`), so the packaged desktop app shows the same
+picture as the web build; both `/api/incidents` + `/api/cameras` are guarded by the contract
+smoke test. (The free-key Phase-2 feeds remain Node-side.)
 
 ### Opt-in sources (default OFF)
 

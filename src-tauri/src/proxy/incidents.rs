@@ -1,10 +1,15 @@
 // GET /api/incidents?lat&lon&radius — Ground/City domain, native port of the fused
-// incident route in server/index.js. The Node backend fans out to many city feeds; the
-// native app mirrors the RESPONSE SHAPE and a keyless subset that works offline-first
-// everywhere (USGS earthquakes + NWS active alerts — both free, no key, global/national).
-// Response: { events: Event[], sources: [{id,ok,count}], ts }.  Event keys match Node's
-// makeEvent exactly (see scripts/contract-smoke.mjs).
+// incident route in server/index.js. Fans out concurrently across every keyless adapter
+// in proxy::sources (Socrata CAD/911 + 311, ArcGIS city layers, NWS, USGS, IEM, EONET,
+// GDACS, NWPS), fuses + de-duplicates, and reports HONEST per-source health: one dead
+// feed becomes {ok:false} and never fails the route.
+//
+// Response: { events: Event[], sources: [{id,ok,count,optin}], ts } — key-for-key identical
+// to the Node backend (scripts/contract-smoke.mjs guards this).
 
+use std::collections::HashSet;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -14,12 +19,12 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use futures_util::future::join_all;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::server::{AppState, Cached, unix_now};
-
-const UA: &str = "Vantage/0.1 (all-domain situational awareness; +github.com/ReconGrunt/vantage)";
+use crate::proxy::sources::{arcgis, hazards, socrata, Bbox};
+use crate::server::{unix_now, AppState, Cached};
 
 #[derive(Deserialize)]
 pub struct Q {
@@ -28,146 +33,92 @@ pub struct Q {
     radius: Option<String>,
 }
 
-fn num(v: &Value) -> Option<f64> {
-    if v.is_null() {
-        None
-    } else if let Some(n) = v.as_f64() {
-        Some(n)
-    } else if let Some(s) = v.as_str() {
-        s.trim().parse::<f64>().ok()
-    } else {
-        None
-    }
-}
-
-async fn get_json(st: &AppState, url: &str, accept: &str) -> Result<Value, String> {
-    let r = st
-        .http
-        .get(url)
-        .header("User-Agent", UA)
-        .header("Accept", accept)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-    if !r.status().is_success() {
-        return Err(format!("{} for {}", r.status(), url));
-    }
-    r.json::<Value>().await.map_err(|e| e.to_string())
-}
-
-fn make_event(
-    source: &str, native: &str, kind: &str, sev: i64, lat: f64, lon: f64,
-    title: &str, desc: &str, url: Value, ts: f64, expires: Value,
-) -> Value {
-    json!({
-        "id": format!("{}:{}", source, native),
-        "kind": kind,
-        "severity": sev.clamp(0, 3),
-        "lat": lat, "lon": lon,
-        "title": title, "description": desc,
-        "source": source, "sourceUrl": url,
-        "ts": ts, "expiresTs": expires,
-    })
-}
-
-async fn quakes(st: &AppState, mnlat: f64, mxlat: f64, mnlon: f64, mxlon: f64) -> Result<Vec<Value>, String> {
-    let d = get_json(st, "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson", "application/json").await?;
-    let mut out = vec![];
-    if let Some(feats) = d.get("features").and_then(|f| f.as_array()) {
-        for f in feats {
-            let c = match f.get("geometry").and_then(|g| g.get("coordinates")).and_then(|c| c.as_array()) {
-                Some(c) if c.len() >= 2 => c,
-                _ => continue,
-            };
-            let (lon, lat) = match (num(&c[0]), num(&c[1])) {
-                (Some(a), Some(b)) => (a, b),
-                _ => continue,
-            };
-            if lat < mnlat || lat > mxlat || lon < mnlon || lon > mxlon {
-                continue;
-            }
-            let p = f.get("properties").cloned().unwrap_or_else(|| json!({}));
-            let mag = p.get("mag").and_then(|m| m.as_f64()).unwrap_or(0.0);
-            let sev = if mag >= 5.0 { 3 } else if mag >= 4.0 { 2 } else if mag >= 2.5 { 1 } else { 0 };
-            let ts = p.get("time").and_then(|t| t.as_f64()).unwrap_or(0.0);
-            let id = f.get("id").and_then(|i| i.as_str()).unwrap_or("q").to_string();
-            out.push(make_event(
-                "usgs-quake", &id, "quake", sev, lat, lon,
-                &format!("M{:.1} earthquake", mag),
-                p.get("place").and_then(|x| x.as_str()).unwrap_or(""),
-                p.get("url").cloned().unwrap_or(Value::Null), ts, Value::Null,
-            ));
-        }
-    }
-    Ok(out)
-}
-
-async fn nws(st: &AppState, lat: f64, lon: f64) -> Result<Vec<Value>, String> {
-    let url = format!("https://api.weather.gov/alerts/active?point={:.4},{:.4}", lat, lon);
-    let d = get_json(st, &url, "application/geo+json").await?;
-    let now_ms = (unix_now() as f64) * 1000.0;
-    let mut out = vec![];
-    if let Some(feats) = d.get("features").and_then(|f| f.as_array()) {
-        for f in feats {
-            let p = f.get("properties").cloned().unwrap_or_else(|| json!({}));
-            let ev = p.get("event").and_then(|x| x.as_str()).unwrap_or("Weather alert");
-            let sev = match p.get("severity").and_then(|x| x.as_str()).unwrap_or("") {
-                "Extreme" => 3, "Severe" => 2, "Moderate" => 1, _ => 0,
-            };
-            let evl = ev.to_lowercase();
-            let kind = if evl.contains("flood") || evl.contains("tsunami") || evl.contains("marine") || evl.contains("coastal") { "hazard" } else { "weather" };
-            let id = p.get("id").and_then(|x| x.as_str()).unwrap_or("nws").to_string();
-            // area-wide alert → pin at the observer (parity: Node uses geometry centroid
-            // when present, else the observer; shape is identical either way).
-            out.push(make_event(
-                "nws-alerts", &id, kind, sev, lat, lon, ev,
-                p.get("headline").and_then(|x| x.as_str())
-                    .or_else(|| p.get("areaDesc").and_then(|x| x.as_str())).unwrap_or(""),
-                p.get("uri").cloned().unwrap_or(Value::Null), now_ms, Value::Null,
-            ));
-        }
-    }
-    Ok(out)
-}
+type SrcFut<'a> = Pin<Box<dyn Future<Output = (&'static str, Result<Vec<Value>, String>)> + Send + 'a>>;
 
 pub async fn handler(State(st): State<AppState>, Query(q): Query<Q>) -> Response {
     let lat = q.lat.as_deref().and_then(|s| s.parse::<f64>().ok());
     let lon = q.lon.as_deref().and_then(|s| s.parse::<f64>().ok());
     let (lat, lon) = match (lat, lon) {
         (Some(a), Some(b)) if a.is_finite() && b.is_finite() => (a, b),
-        _ => return (StatusCode::BAD_REQUEST, Json(json!({ "error": "lat and lon required", "events": [], "sources": [] }))).into_response(),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "lat and lon required", "events": [], "sources": [] })),
+            )
+                .into_response()
+        }
     };
     let radius = q.radius.as_deref().and_then(|s| s.parse::<f64>().ok()).unwrap_or(30.0).min(120.0);
-    let dlat = radius / 111.0;
-    let dlon = radius / (111.0 * (lat.to_radians().cos()).abs().max(0.05));
-    let (mnlat, mxlat, mnlon, mxlon) = (lat - dlat, lat + dlat, lon - dlon, lon + dlon);
 
+    // Quantized cache key (0.1 deg) so a browsable map can't grow the cache unbounded.
     let key = format!("inc:{:.1},{:.1},{}", lat, lon, radius.round());
     if let Some(c) = st.json.get(&key).await {
         if Instant::now() < c.good_until {
             let mut v = (*c.value).clone();
-            if let Some(o) = v.as_object_mut() { o.insert("cached".into(), json!(true)); }
+            if let Some(o) = v.as_object_mut() {
+                o.insert("cached".into(), json!(true));
+            }
             return Json(v).into_response();
         }
     }
 
-    // fan out (both guarded individually → a dead feed is {ok:false}, never fatal)
-    let (q_res, n_res) = tokio::join!(quakes(&st, mnlat, mxlat, mnlon, mxlon), nws(&st, lat, lon));
-    let mut events: Vec<Value> = vec![];
-    let mut sources: Vec<Value> = vec![];
-    match q_res {
-        Ok(v) => { sources.push(json!({"id":"usgs-quake","ok":true,"count":v.len(),"optin":false})); events.extend(v); }
-        Err(e) => sources.push(json!({"id":"usgs-quake","ok":false,"count":0,"optin":false,"error":e})),
+    let b = Bbox::new(lat, lon, radius);
+    let stref = &st;
+    let bref = &b;
+
+    let mut futs: Vec<SrcFut<'_>> = Vec::new();
+    for ds in socrata::DATASETS {
+        futs.push(Box::pin(async move { (ds.id, socrata::fetch(stref, ds, bref).await) }));
     }
-    match n_res {
-        Ok(v) => { sources.push(json!({"id":"nws-alerts","ok":true,"count":v.len(),"optin":false})); events.extend(v); }
-        Err(e) => sources.push(json!({"id":"nws-alerts","ok":false,"count":0,"optin":false,"error":e})),
+    for ly in arcgis::LAYERS {
+        if ly.category != "incidents" {
+            continue;
+        }
+        futs.push(Box::pin(async move { (ly.id, arcgis::fetch(stref, ly, bref).await) }));
     }
-    events.sort_by(|a, b| b.get("ts").and_then(|x| x.as_f64()).unwrap_or(0.0)
-        .partial_cmp(&a.get("ts").and_then(|x| x.as_f64()).unwrap_or(0.0)).unwrap_or(std::cmp::Ordering::Equal));
+    futs.push(Box::pin(async move { ("nws-alerts", hazards::nws(stref, bref).await) }));
+    futs.push(Box::pin(async move { ("usgs-quake", hazards::quakes(stref, bref).await) }));
+    futs.push(Box::pin(async move { ("usgs-volcano", hazards::volcano(stref, bref).await) }));
+    futs.push(Box::pin(async move { ("iem-lsr", hazards::iem(stref, bref).await) }));
+    futs.push(Box::pin(async move { ("eonet", hazards::eonet(stref, bref).await) }));
+    futs.push(Box::pin(async move { ("gdacs", hazards::gdacs(stref, bref).await) }));
+    futs.push(Box::pin(async move { ("nwps", hazards::nwps(stref, bref).await) }));
+
+    let results = join_all(futs).await;
+
+    let mut events: Vec<Value> = Vec::new();
+    let mut sources: Vec<Value> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    for (id, r) in results {
+        match r {
+            Ok(v) => {
+                let n = v.len();
+                for ev in v {
+                    let k = ev.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                    if k.is_empty() || seen.insert(k) {
+                        events.push(ev);
+                    }
+                }
+                sources.push(json!({ "id": id, "ok": true, "count": n, "optin": false }));
+            }
+            Err(e) => sources.push(json!({ "id": id, "ok": false, "count": 0, "optin": false, "error": e })),
+        }
+    }
+
+    // Freshest first, then cap — a 30-day crime layer alone can exceed the working set.
+    events.sort_by(|a, b| {
+        let ta = a.get("ts").and_then(|x| x.as_f64()).unwrap_or(0.0);
+        let tb = b.get("ts").and_then(|x| x.as_f64()).unwrap_or(0.0);
+        tb.partial_cmp(&ta).unwrap_or(std::cmp::Ordering::Equal)
+    });
     events.truncate(700);
 
     let out = json!({ "events": events, "sources": sources, "ts": unix_now() });
-    st.json.insert(key.clone(), Cached { value: Arc::new(out.clone()), good_until: Instant::now() + Duration::from_secs(20) }).await;
+    st.json
+        .insert(
+            key.clone(),
+            Cached { value: Arc::new(out.clone()), good_until: Instant::now() + Duration::from_secs(20) },
+        )
+        .await;
     Json(out).into_response()
 }
