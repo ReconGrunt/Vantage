@@ -74,7 +74,10 @@ export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, 
     for (const sec of document.querySelectorAll('#panel [data-view]')) {
       const v = sec.dataset.view;
       const bucket = dome ? 'dome' : m; // 'dome' | 'radar' | 'city'
-      const show = v === 'all' || v === bucket;
+      // data-view accepts a SPACE-SEPARATED list ("dome radar"), so a section can belong to
+      // several views without being forced into "all". Air-domain controls used to be
+      // tagged "all" and leaked into the City view as clutter.
+      const show = v === 'all' || v.split(/\s+/).includes(bucket);
       sec.classList.toggle('view-off', !show);
     }
     for (const b of viewBtns) b.classList.toggle('active', b.dataset.mode === m);

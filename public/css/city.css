@@ -20,6 +20,8 @@ body.city-on #brush-cursor,
 body.city-on #flightboard,
 body.city-on #compass,
 body.city-on #iss-alert,
+body.city-on #distress,
+body.city-on #xr-buttons,
 body.city-on #info { display: none !important; }
 body.city-on #panel { top: 40px; max-height: calc(100vh - 54px); }
 body.city-on #atc-chip { top: 40px; bottom: auto; right: auto; left: 50%; transform: translateX(-50%); }
@@ -47,21 +49,23 @@ body.city-on #atc-chip { top: 40px; bottom: auto; right: auto; left: 50%; transf
 
 #cty-attrib { position: fixed; left: 14px; bottom: 8px; font-family: var(--c-mono); font-size: 9px; color: var(--c-mute); opacity: 0.75; pointer-events: none; }
 
-/* top-hotspots board (bottom-left) */
-#cty-hotspots {
-  position: fixed; left: 14px; bottom: 22px; width: 240px; pointer-events: auto;
-  background: var(--c-panel); border: 1px solid var(--c-grid); border-radius: 3px;
-  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); padding: 8px 10px;
+/* tabbed list header — Events / Hotspots share ONE panel */
+.cty-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--c-grid); background: rgba(0, 0, 0, 0.25); }
+.cty-tabs button {
+  flex: 1; background: transparent; border: 0; border-bottom: 2px solid transparent;
+  color: var(--c-dim); font-family: var(--c-mono); font-size: 10.5px; letter-spacing: 0.14em;
+  text-transform: uppercase; padding: 7px 6px; cursor: pointer; transition: color .15s, border-color .15s;
 }
-.cty-hs-head { font-family: var(--c-mono); font-size: 10px; letter-spacing: 0.14em; color: var(--c-accent); margin-bottom: 7px; }
-.cty-hs-row { display: grid; grid-template-columns: 12px 1fr 64px; gap: 7px; align-items: center; padding: 2px 0; cursor: pointer; }
+.cty-tabs button:hover { color: var(--c-text); }
+.cty-tabs button.active { color: var(--c-text); border-bottom-color: var(--c-live); }
+
+.cty-hs-row { display: grid; grid-template-columns: 12px 1fr 84px; gap: 8px; align-items: center; padding: 6px 12px; cursor: pointer; border-bottom: 1px solid rgba(27, 34, 41, 0.6); }
 .cty-hs-row:hover { opacity: 0.85; }
 .cty-hs-dot { width: 8px; height: 8px; border-radius: 50%; }
 .cty-hs-lbl { font-family: var(--c-mono); font-size: 11px; color: var(--c-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cty-hs-lbl em { color: var(--c-dim); font-style: normal; }
 .cty-hs-bar { height: 5px; background: rgba(255, 255, 255, 0.06); border-radius: 3px; overflow: hidden; }
 .cty-hs-bar i { display: block; height: 100%; }
-.cty-hs-empty { font-family: var(--c-mono); font-size: 10px; color: var(--c-mute); letter-spacing: 0.1em; }
 
 /* event list (bottom-right) */
 #cty-list {

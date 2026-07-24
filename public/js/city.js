@@ -95,6 +95,7 @@ export class CityRenderer {
     this._hover = null;
     this._selected = null;
     this._selCam = null;
+    this._tab = 'events';        // the one list panel shows Events or Hotspots
     this._placingLocation = false;
     this._tiles = new Map();
     this._feedTs = 0;
@@ -216,7 +217,7 @@ export class CityRenderer {
 
     if (t - (this._lastChrome || 0) > 300) {
       this._updateStatus(); this._updateList(); this._updateDetail();
-      this._updateHotspots(); this._updateHealth(); this._refreshCam();
+      this._updateHealth(); this._refreshCam();
       this._lastChrome = t;
     }
   }
@@ -384,12 +385,12 @@ export class CityRenderer {
         <span id="cty-clock" class="data"></span>
       </div>
       <div id="cty-attrib"></div>
-      <div id="cty-hotspots">
-        <div class="cty-hs-head">▲ TOP HOTSPOTS</div>
-        <div id="cty-hs-rows"></div>
-      </div>
       <div id="cty-list">
-        <div class="cty-tl-head"><span>KIND</span><span>EVENT</span><span>SEV</span><span>AGE</span><span>RNG</span></div>
+        <div class="cty-tabs" id="cty-tabs">
+          <button type="button" data-tab="events" class="active">Events</button>
+          <button type="button" data-tab="hotspots">▲ Hotspots</button>
+        </div>
+        <div class="cty-tl-head" id="cty-tl-head"><span>KIND</span><span>EVENT</span><span>SEV</span><span>AGE</span><span>RNG</span></div>
         <div id="cty-tl-rows"></div>
       </div>
       <div id="cty-detail" hidden></div>
@@ -407,21 +408,31 @@ export class CityRenderer {
     this._elRows = el.querySelector('#cty-tl-rows');
     this._elDetail = el.querySelector('#cty-detail');
     this._elAttrib = el.querySelector('#cty-attrib');
-    this._elHot = el.querySelector('#cty-hs-rows');
+    this._elTabs = el.querySelector('#cty-tabs');
+    this._elHead = el.querySelector('#cty-tl-head');
     this._elCam = el.querySelector('#cty-cam');
     this._elCamName = el.querySelector('#cty-cam-name');
     this._elCamImg = el.querySelector('#cty-cam-img');
     this._elCamMeta = el.querySelector('#cty-cam-meta');
 
+    // ONE list panel serves both tabs, so the view floats fewer panels.
+    this._elTabs.addEventListener('click', (ev) => {
+      const b = ev.target.closest('[data-tab]');
+      if (!b) return;
+      this._tab = b.dataset.tab;
+      for (const x of this._elTabs.querySelectorAll('[data-tab]')) x.classList.toggle('active', x === b);
+      this._elHead.style.display = this._tab === 'events' ? '' : 'none';
+      this._updateList();
+    });
     this._elRows.addEventListener('click', (ev) => {
+      const hs = ev.target.closest('[data-i]');
+      if (hs) {
+        const h = this.hotspots.ranked[+hs.dataset.i];
+        if (h) { this.center = { lat: h.lat, lon: h.lon }; this.panned = true; this.zoom = Math.max(this.zoom, 14); }
+        return;
+      }
       const row = ev.target.closest('[data-id]');
       if (row) { this._selected = row.dataset.id; this._selCam = null; this._elCam.hidden = true; this._panToSelected(); this._updateList(); this._updateDetail(); }
-    });
-    this._elHot.addEventListener('click', (ev) => {
-      const row = ev.target.closest('[data-i]');
-      if (!row) return;
-      const h = this.hotspots.ranked[+row.dataset.i];
-      if (h) { this.center = { lat: h.lat, lon: h.lon }; this.panned = true; this.zoom = Math.max(this.zoom, 14); }
     });
     el.querySelector('#cty-cam-close').addEventListener('click', () => { this._selCam = null; this._elCam.hidden = true; });
   }
@@ -442,6 +453,7 @@ export class CityRenderer {
   }
 
   _updateList() {
+    if (this._tab === 'hotspots') return this._renderHotspotRows();
     const rows = this._markers.slice().reverse().slice(0, 60).map((m) => {
       const e = m.e, st = groundKind(e.kind), sel = this._selected === e.id ? ' sel' : '';
       return `<div class="cty-tl-row${sel}" data-id="${esc(e.id)}">`
@@ -493,15 +505,17 @@ export class CityRenderer {
       + (e.sourceUrl ? `<div class="cty-d-link"><a href="${esc(e.sourceUrl)}" target="_blank" rel="noopener">source ↗</a></div>` : '');
   }
 
-  _updateHotspots() {
-    const top = this.hotspots.ranked.slice(0, 6);
-    if (!top.length) { this._elHot.innerHTML = '<div class="cty-hs-empty">— quiet —</div>'; return; }
-    this._elHot.innerHTML = top.map((h, i) => {
+  // Hotspots render into the SAME list panel (tabbed), so the view floats one list, one
+  // detail panel and one status strip instead of scattering boards around the screen.
+  _renderHotspotRows() {
+    const top = this.hotspots.ranked.slice(0, 14);
+    if (!top.length) { this._elRows.innerHTML = '<div class="cty-tl-empty">— quiet —</div>'; return; }
+    this._elRows.innerHTML = top.map((h, i) => {
       const st = groundKind(h.topKind);
       const bar = Math.max(6, Math.round(100 * h.score / (this.hotspots.maxScore || 1)));
       return `<div class="cty-hs-row" data-i="${i}">`
         + `<span class="cty-hs-dot" style="background:${st.hex}"></span>`
-        + `<span class="cty-hs-lbl">${st.label} <em>${h.count}</em></span>`
+        + `<span class="cty-hs-lbl">${st.label} <em>${h.count} events</em></span>`
         + `<span class="cty-hs-bar"><i style="width:${bar}%;background:${st.hex}"></i></span></div>`;
     }).join('');
   }
