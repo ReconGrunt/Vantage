@@ -15,7 +15,7 @@
 
 use serde_json::Value;
 
-use super::{get_json, kind_from_text, make_event, now_ms, parse_iso_ms, s_of, sev_from_text, Bbox};
+use super::{get_json, kind_from_text, make_event, now_ms, parse_iso_ms, parse_rfc822, s_of, sev_from_text, Bbox};
 use crate::server::AppState;
 
 const LA_REGION: (f64, f64, f64, f64) = (33.68, 34.35, -118.68, -118.15);
@@ -187,7 +187,10 @@ pub async fn lapd_news(st: &AppState, b: &Bbox) -> Result<Vec<Value>, String> {
         if !b.contains(la, lo) {
             continue;
         }
-        let ts = parse_iso_ms(&tag_value(block, "pubDate")).unwrap_or_else(now_ms);
+        // RSS pubDate is RFC-822 ("Mon, 28 Apr 2025 …"); parse_iso_ms can't read it, so an
+        // old post used to default to `now` and slip through the freshness window.
+        let pubdate = tag_value(block, "pubDate");
+        let ts = parse_rfc822(&pubdate).or_else(|| parse_iso_ms(&pubdate)).unwrap_or_else(now_ms);
         let k = kind_from_text(&blob);
         let kind = if k == "civic" { "police" } else { k };
         let native = if !guid.is_empty() { guid } else { title.clone() };

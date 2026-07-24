@@ -114,6 +114,64 @@ pub fn parse_iso_ms(s: &str) -> Option<f64> {
     Some(((days * 86400 + hh * 3600 + mm * 60 + ss) as f64) * 1000.0)
 }
 
+fn month_num(t: &str) -> Option<i64> {
+    let lc = t.to_lowercase();
+    match lc.get(..3)? {
+        "jan" => Some(1), "feb" => Some(2), "mar" => Some(3), "apr" => Some(4),
+        "may" => Some(5), "jun" => Some(6), "jul" => Some(7), "aug" => Some(8),
+        "sep" => Some(9), "oct" => Some(10), "nov" => Some(11), "dec" => Some(12),
+        _ => None,
+    }
+}
+
+fn tz_offset_min(tz: &str) -> i64 {
+    if let Some(rest) = tz.strip_prefix('+').or_else(|| tz.strip_prefix('-')) {
+        if rest.len() >= 4 {
+            let h: i64 = rest[..2].parse().unwrap_or(0);
+            let m: i64 = rest[2..4].parse().unwrap_or(0);
+            let sign = if tz.starts_with('-') { -1 } else { 1 };
+            return sign * (h * 60 + m);
+        }
+        return 0;
+    }
+    match tz.to_uppercase().as_str() {
+        "EST" => -300, "EDT" => -240, "CST" => -360, "CDT" => -300,
+        "MST" => -420, "MDT" => -360, "PST" => -480, "PDT" => -420,
+        _ => 0, // GMT / UT / UTC / Z / unknown
+    }
+}
+
+/// RFC-822/1123 date used by RSS `pubDate`, e.g. "Mon, 28 Apr 2025 14:38:05 +0000"
+/// (the leading weekday is optional) -> epoch ms. parse_iso_ms can't read these, so an
+/// unhandled pubDate used to fall back to "now" — making a year-old post look brand new.
+pub fn parse_rfc822(s: &str) -> Option<f64> {
+    let toks: Vec<&str> = s.split_whitespace().collect();
+    let mi = toks.iter().position(|t| month_num(t).is_some())?; // anchor on the month name
+    if mi == 0 {
+        return None;
+    }
+    let day: i64 = toks.get(mi - 1)?.trim_end_matches(',').parse().ok()?;
+    let month = month_num(toks[mi])?;
+    let mut year: i64 = toks.get(mi + 1)?.parse().ok()?;
+    if year < 100 {
+        year += if year < 70 { 2000 } else { 1900 }; // 2-digit RFC-822 year
+    }
+    let (mut hh, mut mm, mut ss) = (0i64, 0i64, 0i64);
+    if let Some(t) = toks.get(mi + 2) {
+        let p: Vec<&str> = t.split(':').collect();
+        hh = p.first().and_then(|x| x.parse().ok()).unwrap_or(0);
+        mm = p.get(1).and_then(|x| x.parse().ok()).unwrap_or(0);
+        ss = p.get(2).and_then(|x| x.parse().ok()).unwrap_or(0);
+    }
+    let off_min = toks.get(mi + 3).map(|tz| tz_offset_min(tz)).unwrap_or(0);
+    if !(1..=31).contains(&day) {
+        return None;
+    }
+    let days = days_from_civil(year, month, day);
+    let epoch_s = days * 86400 + hh * 3600 + mm * 60 + ss - off_min * 60;
+    Some((epoch_s as f64) * 1000.0)
+}
+
 pub fn now_ms() -> f64 {
     (crate::server::unix_now() as f64) * 1000.0
 }
