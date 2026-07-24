@@ -22,6 +22,7 @@ body.city-on #compass,
 body.city-on #iss-alert,
 body.city-on #distress,
 body.city-on #xr-buttons,
+body.city-on #atc-chip,
 body.city-on #info { display: none !important; }
 body.city-on #panel { top: 40px; max-height: calc(100vh - 54px); }
 body.city-on #atc-chip { top: 40px; bottom: auto; right: auto; left: 50%; transform: translateX(-50%); }

@@ -354,7 +354,17 @@ function setRadarRange(nm) {
 
 // A display-mode change from ANYWHERE (dome select, kiosk URL, radar's own view
 // switcher) goes through this so the dome <select> and the radar both stay in sync.
-function changeDisplay(mode) { setDisplay(mode); ui.setDisplayMode(mode); }
+function changeDisplay(mode) {
+  setDisplay(mode);
+  ui.setDisplayMode(mode);
+  // Remember the view the same way the location is remembered, so the app reopens where
+  // you left it instead of always snapping back to the ceiling dome.
+  try { localStorage.setItem('display', mode); } catch { /* quota */ }
+  fetch('/api/prefs', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ display: mode }),
+  }).catch(() => { /* local copy still stands */ });
+}
 
 // --- UI ---
 const ui = initUI({
@@ -938,6 +948,13 @@ function saveObserver(o) {
     const d = await (await fetch('/api/prefs')).json();
     const o = d?.prefs?.observer;
     if (o && isFinite(o.lat) && isFinite(o.lon)) restored = o;
+    // Restore the last view too — unless a ?display= was given (kiosk launch wins).
+    const view = d?.prefs?.display;
+    if (!/[?&]display=/.test(location.search)
+        && ['free', 'ceiling', 'fisheye', 'radar', 'city'].includes(view)
+        && view !== state.display) {
+      changeDisplay(view);
+    }
   } catch { /* backend prefs unavailable — fall through */ }
 
   if (restored) {

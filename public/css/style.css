@@ -65,6 +65,11 @@ body {
 
 /* ---- command panel (dome / projector controls) --------------------------------- */
 #panel {
+  /* Above the map canvases. #radar and #city are z-index:1, and the panel had none, so in
+     BOTH map views the canvas painted straight over the command menu and it vanished — it
+     only survived in the dome views because the WebGL canvas has no z-index and the panel
+     won on DOM order. This is what "one menu across all views" actually required. */
+  z-index: 8;
   position: fixed; top: 14px; left: 14px; width: 306px;
   max-height: calc(100vh - 28px); overflow-y: auto; overflow-x: hidden;
   background: var(--panel); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);

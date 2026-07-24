@@ -32,7 +32,16 @@ const DISTRICTS: &[(u32, (f64, f64, f64, f64))] = &[
 
 // ---------------------------------------------------------------- LCS (lane closures)
 
-fn severity_of(c: &Value) -> i64 {
+const STANDING_SECS: i64 = 7 * 24 * 60 * 60; // active > 7 days = standing condition
+
+fn severity_of(c: &Value, start_epoch: i64, now_sec: i64) -> i64 {
+    // Mirrors server/sources/caltrans-lcs.js: a closure in effect for weeks (permanent hwy
+    // closures, long bridge works) is a STANDING CONDITION, not an incident. Left at full
+    // severity it dominates the severity-sorted list — real LA data had multi-year
+    // "Landscape Work" full closures outranking message-sign alerts from seconds ago.
+    if now_sec - start_epoch > STANDING_SECS {
+        return 1;
+    }
     match s_of(c, "typeOfClosure") {
         "Full" => 3,
         "One-Way Traffic" | "Traffic Break" => 2,
@@ -133,7 +142,7 @@ async fn load_lcs(st: &AppState, d: u32) -> Result<Vec<Value>, String> {
             "caltrans-lcs",
             &native,
             "traffic",
-            severity_of(c),
+            severity_of(c, start_epoch, now_sec),
             la,
             lo,
             &format!("{} closure — {}", kind_of, work),
