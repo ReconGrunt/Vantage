@@ -1,7 +1,7 @@
 // ui.js — overlay panel: layer toggles, observer location, clock, object info.
 
 export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, onBloomToggle, onWeatherToggle, onGroundToggle, onPathToggle, onLabelFields, onDisplayChange, onNorthChange, onZoom, onSkySpan, onSkyOnly, onGuidesToggle, onBoardToggle, onAutoNorth, onCalibration, onRange, onSatGroupChange, onCatFilter, onBasemap, onRadarRange, onSweep, onRecenter, onPickToggle,
-  onCityLayer, onCityCams, onCityHeat, onCityRange, onCityWindow, onCityBasemap, onCityRecenter, onCityPick }) {
+  onCityLayer, onCityCams, onCityCones, onCityHeat, onCityRange, onCityWindow, onCityBasemap, onCityRecenter, onCityPick }) {
   const $ = (id) => document.getElementById(id);
 
   // layer toggles
@@ -134,6 +134,7 @@ export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, 
     el.addEventListener('change', () => onCityLayer?.(el.dataset.citylayer, el.checked));
   }
   $('city-cams')?.addEventListener('change', (e) => onCityCams?.(e.target.checked));
+  $('city-cones')?.addEventListener('change', (e) => onCityCones?.(e.target.checked));
   $('city-heat')?.addEventListener('change', (e) => onCityHeat?.(e.target.checked));
   const ctyRangeSeg = $('cty-range-seg');
   if (ctyRangeSeg) {

@@ -124,11 +124,17 @@ export async function collect(category, bbox, cfg) {
   const sources = [];
   chosen.forEach((a, i) => {
     const r = settled[i];
-    if (r.status === 'fulfilled' && Array.isArray(r.value)) {
-      const clean = r.value.filter(Boolean);
+    // An adapter returns either a plain array of items OR { items, note } — the note is
+    // an honest ops remark for the feed-health panel (e.g. "3 unlocated dropped").
+    const v = r.status === 'fulfilled' ? r.value : null;
+    const list = Array.isArray(v) ? v : (Array.isArray(v?.items) ? v.items : null);
+    if (list) {
+      const clean = list.filter(Boolean);
       items.push(...clean);
       if (category === 'cameras') for (const cam of clean) indexCamera(cam);
-      sources.push({ id: a.id, ok: true, count: clean.length, optin: !!a.optin });
+      const src = { id: a.id, ok: true, count: clean.length, optin: !!a.optin };
+      if (!Array.isArray(v) && typeof v?.note === 'string' && v.note) src.note = v.note.slice(0, 140);
+      sources.push(src);
     } else {
       sources.push({ id: a.id, ok: false, count: 0, optin: !!a.optin, error: String(r.reason || 'failed').slice(0, 140) });
     }

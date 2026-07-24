@@ -401,6 +401,7 @@ const ui = initUI({
   // Ground/City domain controls (shown only when View = City)
   onCityLayer: (kind, on) => city.setLayer(kind, on),
   onCityCams: (on) => city.setShowCameras(on),
+  onCityCones: (on) => city.setShowCones(on),
   onCityHeat: (on) => city.setShowHeat(on),
   onCityRange: (km) => setCityRange(km),
   onCityWindow: (min) => city.setWindow(min),
@@ -619,7 +620,7 @@ async function refreshWeather() {
 // Incidents refresh at CAD/911 cadence; camera catalogs are near-static so they refetch
 // on view-enter/location-change or every 10 min. Both guarded so a dead feed just leaves
 // the last-known picture up (same serve-stale spirit as the aircraft/weather refreshers).
-let _cityCamAt = 0, _cityCameras = [], _catalogFetched = false;
+let _cityCamAt = 0, _cityCameras = [], _cityCamSources = [], _catalogFetched = false;
 async function refreshCity(force) {
   if (state.display !== 'city') return;
   const { lat, lon } = state.observer, r = state.cityRangeKm;
@@ -632,13 +633,13 @@ async function refreshCity(force) {
     if (force || Date.now() - _cityCamAt > 10 * 60_000) {
       try {
         const cam = await (await fetch(`/api/cameras?lat=${lat}&lon=${lon}&radius=${r}`)).json();
-        _cityCameras = cam.cameras || []; _cityCamAt = Date.now();
+        _cityCameras = cam.cameras || []; _cityCamSources = cam.sources || []; _cityCamAt = Date.now();
       } catch { /* keep last-known cameras */ }
     }
-    city.setData({ events: inc.events || [], cameras: _cityCameras, sources: inc.sources || [], stale: inc.stale });
+    city.setData({ events: inc.events || [], cameras: _cityCameras, sources: inc.sources || [], camSources: _cityCamSources, stale: inc.stale });
     ui.status(inc.stale ? 'City feeds stale — upstream down' : 'Live');
   } catch {
-    city.setData({ events: [], cameras: _cityCameras, sources: [], stale: true });
+    city.setData({ events: [], cameras: _cityCameras, sources: [], camSources: _cityCamSources, stale: true });
     ui.status('City feeds offline — showing last-known');
   }
 }

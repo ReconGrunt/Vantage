@@ -52,8 +52,13 @@ export function makeEvent({ source, nativeId, kind, severity, lat, lon, title, d
 }
 
 // Build a normalized Camera, or null if unplaceable / has no image. Exactly one of
-// still (snapshot JPEG) or stream (HLS/MP4) is required.
-export function makeCamera({ provider, nativeId, name, lat, lon, still, stream, proxied }) {
+// still (snapshot JPEG) or stream (HLS/MP4) is required. Optional metadata (null when
+// the feed doesn't provide it — keys are ALWAYS emitted so the Node/Rust contract and
+// the frontend never have to guess):
+//   az     — compass direction the camera currently faces, deg (PTZ units)
+//   fovDeg — horizontal field of view, deg (drives the map view-cone)
+//   frameTs — epoch ms of the latest frame the source reports (honest freshness)
+export function makeCamera({ provider, nativeId, name, lat, lon, still, stream, proxied, az, fovDeg, frameTs }) {
   const la = numOrNull(lat), lo = numOrNull(lon);
   if (la == null || lo == null) return null;
   if (!still && !stream) return null;
@@ -65,6 +70,9 @@ export function makeCamera({ provider, nativeId, name, lat, lon, still, stream, 
     stream: stream || null,
     provider,
     proxied: !!proxied,                                      // true -> fetch image via /api/camimg/:id
+    az: numOrNull(az),
+    fovDeg: numOrNull(fovDeg),
+    frameTs: Number.isFinite(frameTs) ? frameTs : null,
   };
 }
 

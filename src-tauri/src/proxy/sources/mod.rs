@@ -4,7 +4,7 @@
 //
 // Parity rules with Node (scripts/contract-smoke.mjs guards the shapes):
 //   · Event keys: id, kind, severity, lat, lon, title, description, source, sourceUrl, ts, expiresTs
-//   · Camera keys: id, name, lat, lon, still, stream, provider, proxied
+//   · Camera keys: id, name, lat, lon, still, stream, provider, proxied, az, fovDeg, frameTs
 //   · An item with no usable coordinates is dropped, never guessed (place/event-centric).
 
 pub mod arcgis;
@@ -204,6 +204,26 @@ pub fn make_camera(
     stream: Option<&str>,
     proxied: bool,
 ) -> Option<Value> {
+    make_camera_ex(provider, native, name, lat, lon, still, stream, proxied, None, None, None)
+}
+
+// Full form: PTZ/freshness metadata (az = look direction deg, fov_deg = horizontal FOV,
+// frame_ts = epoch ms of the newest frame). Keys are ALWAYS emitted (null when absent) so
+// the Node/Rust contract and the frontend never have to guess — mirror of the JS makeCamera.
+#[allow(clippy::too_many_arguments)]
+pub fn make_camera_ex(
+    provider: &str,
+    native: &str,
+    name: &str,
+    lat: f64,
+    lon: f64,
+    still: Option<&str>,
+    stream: Option<&str>,
+    proxied: bool,
+    az: Option<f64>,
+    fov_deg: Option<f64>,
+    frame_ts: Option<f64>,
+) -> Option<Value> {
     if !lat.is_finite() || !lon.is_finite() {
         return None;
     }
@@ -217,6 +237,7 @@ pub fn make_camera(
         "still": still.map(Value::from).unwrap_or(Value::Null),
         "stream": stream.map(Value::from).unwrap_or(Value::Null),
         "provider": provider, "proxied": proxied,
+        "az": az, "fovDeg": fov_deg, "frameTs": frame_ts,
     }))
 }
 

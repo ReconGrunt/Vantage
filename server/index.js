@@ -468,19 +468,21 @@ app.get('/api/incidents', async (req, res) => {
 app.get('/api/cameras', async (req, res) => {
   const lat = parseFloat(req.query.lat), lon = parseFloat(req.query.lon);
   const radiusKm = Math.min(parseFloat(req.query.radius) || 30, 120);
-  if (!isFinite(lat) || !isFinite(lon)) return res.status(400).json({ error: 'lat and lon required', cameras: [] });
+  if (!isFinite(lat) || !isFinite(lon)) return res.status(400).json({ error: 'lat and lon required', cameras: [], sources: [] });
   const key = `cam:${lat.toFixed(1)},${lon.toFixed(1)},${Math.round(radiusKm)}`;
   const cached = getCached(key);
   if (cached) return res.json({ ...cached, cached: true });
   try {
-    const { items } = await collect('cameras', bboxFromRadius(lat, lon, radiusKm), CITY_CFG);
-    const payload = { cameras: items, ts: Math.floor(Date.now() / 1000) };
+    // sources rides along so the feed-health panel reports camera feeds HONESTLY (real
+    // ok/count/note per source) instead of a generic "cam" dot.
+    const { items, sources } = await collect('cameras', bboxFromRadius(lat, lon, radiusKm), CITY_CFG);
+    const payload = { cameras: items, sources, ts: Math.floor(Date.now() / 1000) };
     setCached(key, payload, 10 * 60_000); // camera catalogs are near-static; cache 10 min
     res.json(payload);
   } catch (err) {
     const stale = cache.get(key);
     if (stale) return res.json({ ...stale.data, stale: true, error: String(err) });
-    res.status(502).json({ error: String(err), cameras: [] });
+    res.status(502).json({ error: String(err), cameras: [], sources: [] });
   }
 });
 
@@ -514,7 +516,7 @@ app.get('/api/camimg/:id', async (req, res) => {
   }
   try {
     const upstream = await fetch(url, { headers: { 'User-Agent': 'Vantage/0.1 (camera view)' }, signal: AbortSignal.timeout(8000) });
-    if (!upstream.ok) return res.status(upstream.status).end();
+    if (!upstream.ok) throw new Error(`${upstream.status}`);
     const type = upstream.headers.get('content-type') || 'image/jpeg';
     const buf = Buffer.from(await upstream.arrayBuffer());
     if (imgCache.size >= IMG_CACHE_MAX) imgCache.delete(imgCache.keys().next().value);
@@ -523,6 +525,15 @@ app.get('/api/camimg/:id', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.end(buf);
   } catch {
+    // Upstream failed — serve the last-good frame if we have one. A camera whose agency
+    // blips for a minute keeps its picture (stale beats blank); only a camera that has
+    // NEVER served a frame errors out, and the client marks that one offline.
+    const last = imgCache.get(key);
+    if (last) {
+      res.setHeader('Content-Type', last.type);
+      res.setHeader('Cache-Control', 'no-store');
+      return res.end(last.buf);
+    }
     res.status(502).end();
   }
 });

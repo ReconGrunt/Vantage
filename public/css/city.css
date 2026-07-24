@@ -93,6 +93,7 @@ body.city-on #atc-chip { top: 40px; bottom: auto; right: auto; left: 50%; transf
   -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5); font-family: var(--c-mono); font-size: 12px;
 }
+#cty-cam { width: 424px; }  /* room for a 2-up live grid */
 #cty-detail { max-height: calc(100vh - 60px - 44vh); overflow-y: auto; padding-bottom: 8px; }
 .cty-d-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 2px solid var(--c-grid); margin-bottom: 4px; font-weight: 700; }
 .cty-d-head span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -102,12 +103,37 @@ body.city-on #atc-chip { top: 40px; bottom: auto; right: auto; left: 50%; transf
 .cty-d-row span.data { text-align: right; }
 .cty-d-link { padding: 7px 12px 2px; }
 .cty-d-link a { color: var(--c-live); text-decoration: none; font-size: 11px; letter-spacing: 0.06em; }
+.cty-d-cams {
+  background: rgba(33, 211, 201, 0.08); border: 1px solid rgba(33, 211, 201, 0.35); border-radius: 2px;
+  color: var(--c-live); font-family: var(--c-mono); font-size: 11px; letter-spacing: 0.06em;
+  padding: 5px 10px; cursor: pointer; width: 100%; text-align: left;
+}
+.cty-d-cams:hover { background: rgba(33, 211, 201, 0.16); }
 
 .cty-cam-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--c-grid); }
 #cty-cam-name { color: var(--c-text); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #cty-cam-close { background: transparent; border: 0; color: var(--c-dim); cursor: pointer; font-size: 13px; }
-#cty-cam-img { display: block; width: 100%; height: auto; background: #05070a; min-height: 120px; }
-.cty-cam-meta { padding: 6px 12px; color: var(--c-mute); font-size: 10px; }
+
+/* live feed grid — one cell per feed at the site; each refreshes + fails independently */
+#cty-cam-grid { display: grid; grid-template-columns: 1fr 1fr; max-height: calc(100vh - 220px); overflow-y: auto; }
+#cty-cam-grid.single { grid-template-columns: 1fr; }
+.cty-cam-cell { border-bottom: 1px solid var(--c-grid); min-width: 0; }
+.cty-cam-cell:nth-child(odd) { border-right: 1px solid var(--c-grid); }
+.cty-cam-cell-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 5px 8px 4px; }
+.cty-cam-cell-name { color: var(--c-dim); font-size: 10px; letter-spacing: 0.06em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cty-cam-age { color: var(--c-mute); font-size: 9px; flex: none; }
+.cty-cam-cell img { display: block; width: 100%; height: auto; background: #05070a; min-height: 88px; }
+.cty-cam-cell.off img { visibility: hidden; min-height: 60px; }
+.cty-cam-cell.off .cty-cam-cell-name::after { content: ' · OFFLINE'; color: #FF3B47; letter-spacing: 0.1em; }
+.cty-cam-cell-meta { padding: 3px 8px 5px; color: var(--c-mute); font-size: 9px; }
+.cty-cam-meta { padding: 6px 12px; color: var(--c-mute); font-size: 10px; border-top: 1px solid var(--c-grid); }
+
+/* cameras tab rows: icon · site name · provider · distance */
+.cty-cam-row { grid-template-columns: 0.35fr 2.6fr 0.8fr 0.6fr !important; }
+.cty-cam-ico { font-size: 10px; }
+.cty-cam-n { color: var(--c-live); font-style: normal; font-size: 10px; }
+.cty-cam-prov { color: var(--c-mute); }
+.cty-src-note { display: block; color: var(--c-mute); font-size: 9px; letter-spacing: 0.04em; }
 
 /* source health + incident log rendered into #panel city sections */
 .cty-src { display: grid; grid-template-columns: 12px 1fr auto; gap: 8px; align-items: center; font-family: var(--c-mono); font-size: 11px; padding: 2px 0; }

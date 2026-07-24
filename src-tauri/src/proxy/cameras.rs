@@ -78,6 +78,18 @@ fn host_allowed(url: &str) -> bool {
         .any(|a| host == *a || host.ends_with(&format!(".{}", a)))
 }
 
+/// Last-good camera frames: id -> (fetched-at, content-type, bytes). Serves two purposes:
+/// a 15 s freshness cache (parity with the Node imgCache — one upstream pull per 15 s per
+/// camera no matter how many viewers), and a stale fallback so an upstream blip shows the
+/// last-good frame instead of an instant error.
+static IMG_CACHE: OnceLock<Mutex<HashMap<String, (Instant, String, Vec<u8>)>>> = OnceLock::new();
+const IMG_CACHE_MAX: usize = 1500;
+const IMG_FRESH_S: u64 = 15;
+
+fn img_cache() -> &'static Mutex<HashMap<String, (Instant, String, Vec<u8>)>> {
+    IMG_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 /// GET /api/camimg/:id — native port of the Express camera-image proxy.
 pub async fn image(State(st): State<AppState>, Path(id): Path<String>) -> Response {
     let url = match cam_index().lock().ok().and_then(|m| m.get(&id).cloned()) {
@@ -87,7 +99,15 @@ pub async fn image(State(st): State<AppState>, Path(id): Path<String>) -> Respon
     if !host_allowed(&url) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    match st.http.get(&url).header("User-Agent", "Vantage/0.1 (camera view)").send().await {
+    // Fresh cache hit — no upstream call.
+    if let Ok(m) = img_cache().lock() {
+        if let Some((at, ct, bytes)) = m.get(&id) {
+            if at.elapsed().as_secs() < IMG_FRESH_S {
+                return ([(header::CONTENT_TYPE, ct.clone()), (header::CACHE_CONTROL, "no-store".into())], bytes.clone()).into_response();
+            }
+        }
+    }
+    let fetched = match st.http.get(&url).header("User-Agent", "Vantage/0.1 (camera view)").send().await {
         Ok(r) if r.status().is_success() => {
             let ct = r
                 .headers()
@@ -96,15 +116,35 @@ pub async fn image(State(st): State<AppState>, Path(id): Path<String>) -> Respon
                 .unwrap_or("image/jpeg")
                 .to_string();
             match r.bytes().await {
-                Ok(b) => ([(header::CONTENT_TYPE, ct), (header::CACHE_CONTROL, "no-store".into())], b).into_response(),
-                Err(_) => StatusCode::BAD_GATEWAY.into_response(),
+                Ok(b) => Some((ct, b.to_vec())),
+                Err(_) => None,
             }
         }
-        _ => StatusCode::BAD_GATEWAY.into_response(),
+        _ => None,
+    };
+    match fetched {
+        Some((ct, bytes)) => {
+            if let Ok(mut m) = img_cache().lock() {
+                if m.len() >= IMG_CACHE_MAX {
+                    m.clear(); // simplest bound; the next poll immediately repopulates
+                }
+                m.insert(id, (Instant::now(), ct.clone(), bytes.clone()));
+            }
+            ([(header::CONTENT_TYPE, ct), (header::CACHE_CONTROL, "no-store".into())], bytes).into_response()
+        }
+        None => {
+            // Upstream failed — serve the last-good frame if we have one (stale beats blank).
+            if let Ok(m) = img_cache().lock() {
+                if let Some((_, ct, bytes)) = m.get(&id) {
+                    return ([(header::CONTENT_TYPE, ct.clone()), (header::CACHE_CONTROL, "no-store".into())], bytes.clone()).into_response();
+                }
+            }
+            StatusCode::BAD_GATEWAY.into_response()
+        }
     }
 }
 
-type CamFut<'a> = Pin<Box<dyn Future<Output = Result<Vec<Value>, String>> + Send + 'a>>;
+type CamFut<'a> = Pin<Box<dyn Future<Output = Result<cams::CamOut, String>> + Send + 'a>>;
 
 pub async fn handler(State(st): State<AppState>, Query(q): Query<Q>) -> Response {
     let lat = q.lat.as_deref().and_then(|s| s.parse::<f64>().ok());
@@ -114,7 +154,7 @@ pub async fn handler(State(st): State<AppState>, Query(q): Query<Q>) -> Response
         _ => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(json!({ "error": "lat and lon required", "cameras": [] })),
+                Json(json!({ "error": "lat and lon required", "cameras": [], "sources": [] })),
             )
                 .into_response()
         }
@@ -136,33 +176,47 @@ pub async fn handler(State(st): State<AppState>, Query(q): Query<Q>) -> Response
     let stref = &st;
     let bref = &b;
 
-    let mut futs: Vec<CamFut<'_>> = Vec::new();
-    futs.push(Box::pin(async move { cams::caltrans(stref, bref).await }));
-    futs.push(Box::pin(async move { cams::alertca(stref, bref).await }));
-    futs.push(Box::pin(async move { cams::nyctmc(stref, bref).await }));
-    futs.push(Box::pin(async move { cams::tfl(stref, bref).await }));
+    // (source id, fetch) pairs so the fused response can carry honest per-source health
+    // (ok/count/note) — parity with the Node registry's `sources` for the cameras category.
+    let mut futs: Vec<(&'static str, CamFut<'_>)> = Vec::new();
+    futs.push(("caltrans-cam", Box::pin(async move { cams::caltrans(stref, bref).await })));
+    futs.push(("alertca-cam", Box::pin(async move { cams::alertca(stref, bref).await })));
+    futs.push(("nyc-dot-cam", Box::pin(async move { cams::nyctmc(stref, bref).await })));
+    futs.push(("tfl-jamcam", Box::pin(async move { cams::tfl(stref, bref).await })));
     for ly in arcgis::LAYERS {
         if ly.category != "cameras" {
             continue;
         }
-        futs.push(Box::pin(async move { arcgis::fetch(stref, ly, bref).await }));
+        futs.push((ly.id, Box::pin(async move { arcgis::fetch(stref, ly, bref).await.map(cams::CamOut::simple) })));
     }
 
     let mut cameras: Vec<Value> = Vec::new();
+    let mut sources: Vec<Value> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
-    for r in join_all(futs).await {
-        if let Ok(v) = r {
-            for cam in v {
-                let k = cam.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                if k.is_empty() || seen.insert(k) {
-                    cameras.push(cam);
+    let results = join_all(futs.into_iter().map(|(id, f)| async move { (id, f.await) })).await;
+    for (id, r) in results {
+        match r {
+            Ok(v) => {
+                for cam in &v.items {
+                    let k = cam.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                    if k.is_empty() || seen.insert(k) {
+                        cameras.push(cam.clone());
+                    }
                 }
+                let mut src = json!({ "id": id, "ok": true, "count": v.items.len(), "optin": false });
+                if let Some(note) = v.note {
+                    src.as_object_mut().unwrap().insert("note".into(), json!(note));
+                }
+                sources.push(src);
+            }
+            Err(e) => {
+                sources.push(json!({ "id": id, "ok": false, "count": 0, "optin": false, "error": e.chars().take(140).collect::<String>() }));
             }
         }
     }
 
     index_cameras(&cameras); // so /api/camimg/:id can resolve what we just served
-    let out = json!({ "cameras": cameras, "ts": unix_now() });
+    let out = json!({ "cameras": cameras, "sources": sources, "ts": unix_now() });
     st.json
         .insert(
             key.clone(),
