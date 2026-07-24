@@ -460,7 +460,7 @@ export class CityRenderer {
         + `<span style="color:${st.hex}">${st.label}</span>`
         + `<span class="ttl" title="${esc(e.title)}">${esc(e.title)}</span>`
         + `<span class="data" style="color:${st.hex}">${e.severity}</span>`
-        + `<span class="data">${ageStr(Date.now() - e.ts)}</span>`
+        + `<span class="data">${this._ageCell(e)}</span>`
         + `<span class="data">${m.rangeKm.toFixed(1)}</span></div>`;
     }).join('');
     this._elRows.innerHTML = rows || `<div class="cty-tl-empty">${this._emptyReason()}</div>`;
@@ -469,6 +469,13 @@ export class CityRenderer {
   // Say WHY the list is empty. An empty map must never be ambiguous with a broken app:
   // distinguish "no feed covers here" from "your time window hides them" from "you've
   // panned away". Each case has a different fix, so name it.
+  // A still-in-effect condition that began weeks ago should read "ongoing", not "1455d" —
+  // the raw age of a multi-year road closure is noise, not information.
+  _ageCell(e) {
+    const age = Date.now() - e.ts;
+    if (e.expiresTs != null && e.expiresTs > Date.now() && age > 7 * 24 * 3600e3) return 'ongoing';
+    return ageStr(age);
+  }
   _windowLabel() {
     const w = this.windowMin;
     return w === 0 ? 'all-time' : w >= 1440 ? `${Math.round(w / 1440)}d` : `${Math.round(w / 60)}h`;

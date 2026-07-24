@@ -71,9 +71,9 @@ export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, 
     const dome = isDome(m);
     // Section-level: reveal only the sections that apply to this view. Use a class (not
     // inline display) so it composes with the kiosk-slim rule instead of overriding it.
+    const bucket = dome ? 'dome' : m; // 'dome' | 'radar' | 'city'
     for (const sec of document.querySelectorAll('#panel [data-view]')) {
       const v = sec.dataset.view;
-      const bucket = dome ? 'dome' : m; // 'dome' | 'radar' | 'city'
       // data-view accepts a SPACE-SEPARATED list ("dome radar"), so a section can belong to
       // several views without being forced into "all". Air-domain controls used to be
       // tagged "all" and leaked into the City view as clutter.
@@ -81,6 +81,10 @@ export function initUI({ state, onObserverChange, onLayerToggle, onLabelToggle, 
       sec.classList.toggle('view-off', !show);
     }
     for (const b of viewBtns) b.classList.toggle('active', b.dataset.mode === m);
+    // The one menu names the domain you're actually in — it used to read "Air Domain"
+    // while the City map was on screen.
+    const sub = $('brand-sub');
+    if (sub) sub.textContent = bucket === 'city' ? 'Ground Domain · City Activity' : 'Air Domain · Situational Awareness';
     // Dome sub-mode rows within the Display / Projection section:
     //   · "Visible sky" span → ceiling only · Ceiling alignment → fisheye only
     //   · Ceiling-shape paint → any projector mode (ceiling or fisheye)

@@ -31,7 +31,14 @@ const CACHE_MS = 60_000;          // closures change on the order of minutes
 const _cache = new Map();         // district -> { at, events }
 const _inflight = new Map();      // district -> Promise (dedupes concurrent refreshes)
 
-function severityOf(c) {
+const STANDING_MS = 7 * 24 * 60 * 60_000; // active > 7 days = a standing condition, not news
+
+function severityOf(c, startEpoch, nowSec) {
+  // A closure that has been in effect for weeks (permanent hwy closures, long bridge
+  // works) is a STANDING CONDITION, not an incident. Left at full severity it dominates
+  // the severity-sorted list — real LA data had 4-year-old "Landscape Work" full closures
+  // outranking message-sign alerts from seconds ago. Keep them on the map, rank them low.
+  if (Number.isFinite(startEpoch) && (nowSec - startEpoch) * 1000 > STANDING_MS) return 1;
   const t = c.typeOfClosure || '';
   if (t === 'Full') return 3;
   if (t === 'One-Way Traffic' || t === 'Traffic Break') return 2;
@@ -71,7 +78,7 @@ async function loadDistrict(d) {
     const ev = makeEvent({
       source: 'caltrans-lcs',
       nativeId: `${c.closureID || l.index}-${c.logNumber || ''}`,
-      kind: 'traffic', severity: severityOf(c), lat: la, lon: lo,
+      kind: 'traffic', severity: severityOf(c, startEpoch, nowSec), lat: la, lon: lo,
       title: `${c.typeOfClosure || 'Lane'} closure — ${work}`,
       description: where + delay,
       sourceUrl: 'https://quickmap.dot.ca.gov',
