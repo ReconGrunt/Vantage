@@ -202,3 +202,193 @@ pub async fn lapd_news(st: &AppState, b: &Bbox) -> Result<Vec<Value>, String> {
     }
     Ok(out)
 }
+
+// --- CHP CAD live traffic incidents ---------------------------------------------------
+// The only genuinely real-time public dispatch feed for LA. cad.chp.ca.gov is an ASP.NET
+// WebForms page, so we drive it like a browser: GET (harvest __VIEWSTATE + cookies) then
+// POST ddlComCenter=LACC and scrape the gvIncidents table. The list has no coordinates —
+// only the dispatching CHP "Area" office — so, as with LAPD divisions, each incident is
+// placed at that office's centroid. Native mirror of server/sources/chp.js.
+const CHP_URL: &str = "https://cad.chp.ca.gov/Traffic.aspx";
+const CHP_CENTER: &str = "LACC";
+const CHP_REGION: (f64, f64, f64, f64) = (33.68, 34.82, -118.95, -117.6);
+
+// The 10 CHP Area offices dispatched by LACC (+ Castaic CVEF), keyed by the exact "Area"
+// string the CAD table prints; coordinates are the geocoded office addresses.
+const CHP_AREAS: &[(&str, f64, f64)] = &[
+    ("central la", 34.0345, -118.2722),
+    ("east la", 34.0243, -118.1327),
+    ("south la", 33.8430, -118.2792),
+    ("west la", 33.9868, -118.3872),
+    ("altadena", 34.1878, -118.1465),
+    ("baldwin park", 34.0645, -117.9730),
+    ("santa fe springs", 33.9445, -118.0648),
+    ("west valley", 34.1815, -118.5885),
+    ("newhall", 34.4128, -118.5670),
+    ("antelope valley", 34.6890, -118.1640),
+    ("castaic", 34.4361, -118.5936),
+];
+
+fn chp_area(name: &str) -> Option<(f64, f64)> {
+    let n = name.trim().to_lowercase();
+    CHP_AREAS.iter().find(|(a, _, _)| *a == n).map(|(_, la, lo)| (*la, *lo))
+}
+
+/// Value of a hidden `<input id="…" … value="…">` (id precedes value in ASP.NET markup).
+fn hidden_value(html: &str, id: &str) -> String {
+    let anchor = match html.find(&format!("id=\"{}\"", id)) {
+        Some(i) => &html[i..],
+        None => return String::new(),
+    };
+    let vstart = match anchor.find("value=\"") {
+        Some(i) => &anchor[i + 7..],
+        None => return String::new(),
+    };
+    match vstart.find('"') {
+        Some(e) => vstart[..e].to_string(),
+        None => String::new(),
+    }
+}
+
+fn decode_entities(s: &str) -> String {
+    s.replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&#39;", "'")
+        .replace("&quot;", "\"")
+        .replace("&gt;", ">")
+        .replace("&lt;", "<")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Extract the gvIncidents rows as cell-string vectors: [Details, No, Time, Type, Loc, LocDesc, Area].
+fn parse_chp_rows(html: &str) -> Vec<Vec<String>> {
+    let mut rows = Vec::new();
+    let tbl_start = match html.find("id=\"gvIncidents\"") {
+        Some(i) => i,
+        None => return rows,
+    };
+    let tbl_end = html[tbl_start..].find("</table>").map(|e| tbl_start + e).unwrap_or(html.len());
+    let tbl = &html[tbl_start..tbl_end];
+    let mut idx = 0;
+    while let Some(tr_rel) = tbl[idx..].find("<tr") {
+        let tr_start = idx + tr_rel;
+        let tr_close = match tbl[tr_start..].find("</tr>") {
+            Some(e) => tr_start + e,
+            None => break,
+        };
+        let row = &tbl[tr_start..tr_close];
+        let mut cells = Vec::new();
+        let mut cidx = 0;
+        while let Some(td_rel) = row[cidx..].find("<td") {
+            let td_start = cidx + td_rel;
+            let gt = match row[td_start..].find('>') {
+                Some(g) => td_start + g + 1,
+                None => break,
+            };
+            let td_close = match row[gt..].find("</td>") {
+                Some(e) => gt + e,
+                None => break,
+            };
+            cells.push(decode_entities(&strip_tags(&row[gt..td_close])));
+            cidx = td_close + 5;
+        }
+        if cells.len() >= 6 {
+            rows.push(cells);
+        }
+        idx = tr_close + 5;
+    }
+    rows
+}
+
+pub async fn chp_cad(st: &AppState, b: &Bbox) -> Result<Vec<Value>, String> {
+    if !b.intersects(CHP_REGION) {
+        return Ok(vec![]);
+    }
+    // 1. GET the page for viewstate + session/F5 cookies.
+    let g = st
+        .http
+        .get(CHP_URL)
+        .header("User-Agent", BROWSER_UA)
+        .header("Accept", "text/html")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !g.status().is_success() {
+        return Err(format!("{} for CHP CAD page", g.status()));
+    }
+    let cookie = g
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .filter_map(|c| c.split(';').next())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("; ");
+    let html = g.text().await.map_err(|e| e.to_string())?;
+    let vs = hidden_value(&html, "__VIEWSTATE");
+    let vsg = hidden_value(&html, "__VIEWSTATEGENERATOR");
+    if vs.is_empty() {
+        return Err("CHP CAD: no __VIEWSTATE (page shape changed)".into());
+    }
+    // 2. POST the LA Communications Center selection.
+    let form = [
+        ("__EVENTTARGET", "ddlComCenter"),
+        ("__EVENTARGUMENT", ""),
+        ("__VIEWSTATE", vs.as_str()),
+        ("__VIEWSTATEGENERATOR", vsg.as_str()),
+        ("ddlComCenter", CHP_CENTER),
+    ];
+    let p = st
+        .http
+        .post(CHP_URL)
+        .header("User-Agent", BROWSER_UA)
+        .header("Accept", "text/html")
+        .header("Referer", CHP_URL)
+        .header("Cookie", cookie)
+        .form(&form)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !p.status().is_success() {
+        return Err(format!("{} for CHP CAD {}", p.status(), CHP_CENTER));
+    }
+    let page = p.text().await.map_err(|e| e.to_string())?;
+
+    let mut out = Vec::new();
+    for cells in parse_chp_rows(&page) {
+        let area = cells.get(6).map(String::as_str).unwrap_or("");
+        let (la, lo) = match chp_area(area) {
+            Some(x) => x,
+            None => continue,
+        };
+        if !b.contains(la, lo) {
+            continue;
+        }
+        let no = cells.get(1).map(String::as_str).unwrap_or("");
+        let time = cells.get(2).map(String::as_str).unwrap_or("");
+        let typ = cells.get(3).map(String::as_str).unwrap_or("");
+        let loc = cells.get(4).map(String::as_str).unwrap_or("").trim();
+        let locdesc = cells.get(5).map(String::as_str).unwrap_or("").trim();
+        let title = if typ.is_empty() { "CHP incident" } else { typ };
+        let where_ = [loc, locdesc].iter().filter(|s| !s.is_empty()).cloned().collect::<Vec<_>>().join(" · ");
+        let k = kind_from_text(title);
+        let kind = if k == "civic" { "traffic" } else { k };
+        let native = if no.is_empty() { format!("{}:{}:{}", area, time, title) } else { no.to_string() };
+        let desc = format!(
+            "{}CHP {} area{} (area-level location)",
+            if where_.is_empty() { String::new() } else { format!("{} — ", where_) },
+            area,
+            if time.is_empty() { String::new() } else { format!(", reported {}", time) },
+        );
+        if let Some(ev) = make_event(
+            "chp-cad", &native, kind, sev_from_text(title), la, lo, title, &desc,
+            Value::from("https://cad.chp.ca.gov/Traffic.aspx"), now_ms(), Value::Null,
+        ) {
+            out.push(ev);
+        }
+    }
+    Ok(out)
+}

@@ -12,6 +12,7 @@ import arcgis from './arcgis.js';
 import nws from './nws.js';
 import usgs from './usgs.js';
 import caltrans from './caltrans.js';
+import alertca from './alertca.js';
 import nyctmc from './nyctmc.js';
 import citizen from './gray/citizen.js';
 import pulsepoint from './gray/pulsepoint.js';
@@ -37,6 +38,7 @@ import caltransCms from './caltrans-cms.js';
 // Official department feeds: LAPD dispatch (division-level) + department news RSS.
 import lapd from './lapd.js';
 import govrss from './govrss.js';
+import chp from './chp.js';
 import bluesky from './gray/bluesky.js';
 
 const ADAPTERS = [
@@ -44,8 +46,8 @@ const ADAPTERS = [
   ...socrata, ...arcgis, ...nws, ...usgs,           // incidents (+ FL511 cameras via arcgis)
   ...iem, ...eonet, ...gdacs, ...nwps,              // more keyless hazard / natural-event feeds
   ...caltransLcs, ...caltransCms,                    // real-time CA road closures + message signs
-  ...lapd, ...govrss,                                // LAPD dispatch + official department RSS
-  ...caltrans, ...nyctmc, ...tfl,                    // cameras
+  ...lapd, ...govrss, ...chp,                        // LAPD dispatch + official RSS + CHP live traffic
+  ...caltrans, ...alertca, ...nyctmc, ...tfl,        // cameras
   // --- Phase 2: keyed-but-free, activate by setting the env key (off otherwise) ---
   ...airquality, ...firms, ...windy, ...wsdot, ...open511sf, ...events,
   // --- opt-in "gray", DEFAULT OFF (never enabled without an explicit flag) ---

@@ -89,6 +89,8 @@ pub async fn handler(State(st): State<AppState>, Query(q): Query<Q>) -> Response
     // LA department feeds: dispatch (division-level) + official news RSS
     futs.push(Box::pin(async move { ("lapd-calls", la::lapd_calls(stref, bref).await) }));
     futs.push(Box::pin(async move { ("lapd-news", la::lapd_news(stref, bref).await) }));
+    // CHP CAD — the only genuinely real-time public dispatch feed for LA (area-level).
+    futs.push(Box::pin(async move { ("chp-cad", la::chp_cad(stref, bref).await) }));
 
     let results = join_all(futs).await;
 

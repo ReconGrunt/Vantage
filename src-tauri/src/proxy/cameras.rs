@@ -64,7 +64,7 @@ fn index_cameras(cams: &[Value]) {
 /// this must cover each provider's image host.
 const CAMERA_HOST_ALLOW: &[&str] = &[
     "nyctmc.org", "dot.ca.gov", "ca.gov", "windy.com", "wsdot.wa.gov",
-    "divas.cloud", "amazonaws.com", "tfl.gov.uk",
+    "divas.cloud", "amazonaws.com", "tfl.gov.uk", "alertcalifornia.org",
 ];
 
 fn host_allowed(url: &str) -> bool {
@@ -138,6 +138,7 @@ pub async fn handler(State(st): State<AppState>, Query(q): Query<Q>) -> Response
 
     let mut futs: Vec<CamFut<'_>> = Vec::new();
     futs.push(Box::pin(async move { cams::caltrans(stref, bref).await }));
+    futs.push(Box::pin(async move { cams::alertca(stref, bref).await }));
     futs.push(Box::pin(async move { cams::nyctmc(stref, bref).await }));
     futs.push(Box::pin(async move { cams::tfl(stref, bref).await }));
     for ly in arcgis::LAYERS {

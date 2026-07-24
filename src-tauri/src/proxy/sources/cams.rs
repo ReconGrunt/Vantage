@@ -75,6 +75,55 @@ pub async fn caltrans(st: &AppState, b: &Bbox) -> Result<Vec<Value>, String> {
     Ok(out)
 }
 
+// --- ALERTCalifornia (UC San Diego) PTZ wildfire cameras ----------------------------
+// ~2,100 public cameras statewide, hundreds ringing LA in the SoCal mountains. Keyless,
+// CORS-open GeoJSON; snapshots refresh ~every 10 s. Native mirror of server/sources/alertca.js.
+const ALERTCA_BASE: &str = "https://cameras.alertcalifornia.org/public-camera-data";
+const CA_REGION: (f64, f64, f64, f64) = (32.0, 43.0, -124.6, -114.0);
+
+pub async fn alertca(st: &AppState, b: &Bbox) -> Result<Vec<Value>, String> {
+    if !b.intersects(CA_REGION) {
+        return Ok(vec![]);
+    }
+    let fc = get_json(st, &format!("{}/all_cameras-v3.json", ALERTCA_BASE), "application/json").await?;
+    let feats = match fc.get("features").and_then(|f| f.as_array()) {
+        Some(f) => f,
+        None => return Ok(vec![]),
+    };
+    let mut out = Vec::new();
+    for ft in feats {
+        // GeoJSON coordinates are [lon, lat, elev]; offline cams carry [null,null,null].
+        let coords = ft.get("geometry").and_then(|g| g.get("coordinates")).and_then(|c| c.as_array());
+        let (la, lo) = match coords {
+            Some(a) => match (a.get(1).and_then(num), a.get(0).and_then(num)) {
+                (Some(la), Some(lo)) => (la, lo),
+                _ => continue,
+            },
+            None => continue,
+        };
+        if !b.contains(la, lo) {
+            continue;
+        }
+        let p = match ft.get("properties") {
+            Some(p) => p,
+            None => continue,
+        };
+        let id = s_of(p, "id").trim();
+        if id.is_empty() {
+            continue;
+        }
+        let name = {
+            let n = s_of(p, "name");
+            if n.is_empty() { id } else { n }
+        };
+        let still = format!("{}/{}/latest-frame.jpg", ALERTCA_BASE, id);
+        if let Some(cam) = make_camera("alertca", id, name, la, lo, Some(&still), None, true) {
+            out.push(cam);
+        }
+    }
+    Ok(out)
+}
+
 // --- NYC DOT (nyctmc) ---------------------------------------------------------------
 const NYC: (f64, f64, f64, f64) = (40.48, 40.93, -74.27, -73.68);
 

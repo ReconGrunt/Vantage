@@ -493,6 +493,7 @@ const CAMERA_HOST_ALLOW = [
   'nyctmc.org', 'dot.ca.gov', 'ca.gov', 'windy.com', 'wsdot.wa.gov',
   'divas.cloud',      // FL511 camera stills
   'amazonaws.com',    // TfL JamCam stills (s3 jamcams.tfl.gov.uk)
+  'alertcalifornia.org', // ALERTCalifornia PTZ snapshots
   'tfl.gov.uk',
 ];
 const imgCache = new Map(); // id -> { buf, type, expires }
