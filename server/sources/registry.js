@@ -34,6 +34,9 @@ import nwps from './nwps.js';
 // real-time police/fire dispatch feed).
 import caltransLcs from './caltrans-lcs.js';
 import caltransCms from './caltrans-cms.js';
+// Official department feeds: LAPD dispatch (division-level) + department news RSS.
+import lapd from './lapd.js';
+import govrss from './govrss.js';
 import bluesky from './gray/bluesky.js';
 
 const ADAPTERS = [
@@ -41,6 +44,7 @@ const ADAPTERS = [
   ...socrata, ...arcgis, ...nws, ...usgs,           // incidents (+ FL511 cameras via arcgis)
   ...iem, ...eonet, ...gdacs, ...nwps,              // more keyless hazard / natural-event feeds
   ...caltransLcs, ...caltransCms,                    // real-time CA road closures + message signs
+  ...lapd, ...govrss,                                // LAPD dispatch + official department RSS
   ...caltrans, ...nyctmc, ...tfl,                    // cameras
   // --- Phase 2: keyed-but-free, activate by setting the env key (off otherwise) ---
   ...airquality, ...firms, ...windy, ...wsdot, ...open511sf, ...events,

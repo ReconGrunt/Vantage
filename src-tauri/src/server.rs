@@ -89,6 +89,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/weather", get(proxy::weather::handler))
         .route("/api/incidents", get(proxy::incidents::handler))
         .route("/api/cameras", get(proxy::cameras::handler))
+        .route("/api/camimg/{id}", get(proxy::cameras::image))
         .route("/api/geolocate", get(proxy::geolocate::handler))
         .route("/api/prefs", get(proxy::prefs::get_prefs).post(proxy::prefs::set_prefs))
         .route("/api/tile/{style}/{z}/{x}/{y}", get(proxy::tile::handler))

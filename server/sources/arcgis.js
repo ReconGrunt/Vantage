@@ -39,6 +39,7 @@ async function fetchArcgis(ds, bbox) {
         provider: ds.id, nativeId: (ds.idField && p[ds.idField]) || `${la.toFixed(5)},${lo.toFixed(5)}`,
         name: ds.nameFn ? ds.nameFn(p) : (p.name || p.Name || ds.label), lat: la, lon: lo,
         still: ds.stillFn ? ds.stillFn(p) : null, stream: ds.streamFn ? ds.streamFn(p) : null,
+        proxied: true,   // all camera images go through /api/camimg — see caltrans.js
       });
       if (cam) out.push(cam);
     } else {

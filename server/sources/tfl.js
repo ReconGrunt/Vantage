@@ -17,7 +17,7 @@ async function fetchTfl(bbox, cfg) {
     if (la == null || lo == null || !inBbox(bbox, la, lo)) continue;
     const img = (p.additionalProperties || []).find((a) => a.key === 'imageUrl')?.value;
     if (!img) continue;
-    const cam = makeCamera({ provider: 'tfl', nativeId: p.id, name: p.commonName || 'JamCam', lat: la, lon: lo, still: img, proxied: false });
+    const cam = makeCamera({ provider: 'tfl', nativeId: p.id, name: p.commonName || 'JamCam', lat: la, lon: lo, still: img, proxied: true });
     if (cam) out.push(cam);
   }
   return out;

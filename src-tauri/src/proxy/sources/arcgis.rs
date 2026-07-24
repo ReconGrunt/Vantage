@@ -111,7 +111,7 @@ pub async fn fetch(st: &AppState, ly: &Layer, b: &Bbox) -> Result<Vec<Value>, St
                 let s = s_of(p, ly.still_field);
                 if s.is_empty() { None } else { Some(s) }
             };
-            if let Some(cam) = make_camera(ly.id, &native, name, la, lo, still, None, false) {
+            if let Some(cam) = make_camera(ly.id, &native, name, la, lo, still, None, true) {
                 out.push(cam);
             }
         } else {

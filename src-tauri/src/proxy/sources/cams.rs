@@ -43,6 +43,11 @@ pub async fn caltrans(st: &AppState, b: &Bbox) -> Result<Vec<Value>, String> {
                 if !b.contains(la, lo) {
                     continue;
                 }
+                // Skip units the agency reports as out of service (~89 of D07's 540) —
+                // pinning them is what made the map look like most cameras were down.
+                if s_of(c, "inService").eq_ignore_ascii_case("false") {
+                    continue;
+                }
                 let still = c.get("imageData").and_then(|i| i.get("static")).and_then(|s| s.get("currentImageURL")).and_then(|u| u.as_str());
                 let stream = c.get("imageData").and_then(|i| i.get("streamingVideoURL")).and_then(|u| u.as_str());
                 if still.is_none() && stream.is_none() {
@@ -61,7 +66,7 @@ pub async fn caltrans(st: &AppState, b: &Bbox) -> Result<Vec<Value>, String> {
                     }
                     if n.is_empty() { "Caltrans CCTV".to_string() } else { n }
                 };
-                if let Some(cam) = make_camera("caltrans", &idx, &name, la, lo, still, stream, false) {
+                if let Some(cam) = make_camera("caltrans", &idx, &name, la, lo, still, stream, true) {
                     out.push(cam);
                 }
             }
@@ -156,7 +161,7 @@ pub async fn tfl(st: &AppState, b: &Bbox) -> Result<Vec<Value>, String> {
             let n = s_of(p, "commonName");
             if n.is_empty() { "JamCam" } else { n }
         };
-        if let Some(cam) = make_camera("tfl", s_of(p, "id"), name, la, lo, Some(img), None, false) {
+        if let Some(cam) = make_camera("tfl", s_of(p, "id"), name, la, lo, Some(img), None, true) {
             out.push(cam);
         }
     }

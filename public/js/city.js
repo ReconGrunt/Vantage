@@ -564,6 +564,14 @@ export class CityRenderer {
     this._elCamName.textContent = cam.name;
     this._elCamMeta.textContent = `${cam.provider} · ${cam.lat.toFixed(3)}, ${cam.lon.toFixed(3)}`;
     this._camSrc = cam.proxied ? `/api/camimg/${encodeURIComponent(cam.id)}` : (cam.still || cam.stream);
+    // Say "offline" instead of showing a broken image icon — agencies take units out of
+    // service constantly and a silent broken <img> reads as "the app is broken".
+    const meta = `${cam.provider} · ${cam.lat.toFixed(3)}, ${cam.lon.toFixed(3)}`;
+    this._elCamImg.onerror = () => {
+      this._elCamImg.removeAttribute('src');
+      this._elCamMeta.textContent = `${cam.provider} · camera offline`;
+    };
+    this._elCamImg.onload = () => { this._elCamMeta.textContent = meta; };
     this._elCamImg.src = this._camSrc + (this._camSrc.includes('?') ? '&' : '?') + 't=' + Math.floor(performance.now());
     this._elCam.hidden = false;
   }

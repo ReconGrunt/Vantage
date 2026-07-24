@@ -28,12 +28,19 @@ async function fetchDistrict(dist, bbox) {
     const loc = c.location || {};
     const la = numOrNull(loc.latitude), lo = numOrNull(loc.longitude);
     if (la == null || lo == null || !inBbox(bbox, la, lo)) continue;
+    // Drop units the agency itself reports as out of service — ~89 of D07's 540 cameras.
+    // Pinning them anyway is what made the map look like "most cameras are down".
+    if (String(c.inService).toLowerCase() === 'false') continue;
     const still = c.imageData?.static?.currentImageURL || null;
     const stream = c.imageData?.streamingVideoURL || null;
     if (!still && !stream) continue;
     const cam = makeCamera({
       provider: 'caltrans', nativeId: c.index || `${la.toFixed(5)},${lo.toFixed(5)}`,
       name: loc.locationName || loc.nearbyPlace || 'Caltrans CCTV', lat: la, lon: lo, still, stream,
+      // Serve every camera through /api/camimg rather than hotlinking from the client:
+      // one code path, server-side caching, and a real error we can show instead of a
+      // broken <img>.
+      proxied: true,
     });
     if (cam) out.push(cam);
   }

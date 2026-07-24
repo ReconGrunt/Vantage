@@ -487,7 +487,14 @@ app.get('/api/cameras', async (req, res) => {
 // Camera-image proxy. Takes an ID that must resolve against the server's OWN camera
 // catalog (populated by /api/cameras) — never a caller-supplied URL, and the resolved
 // host is allow-listed. This is deliberately NOT an open proxy (no SSRF surface).
-const CAMERA_HOST_ALLOW = ['nyctmc.org', 'dot.ca.gov', 'ca.gov', 'windy.com', 'wsdot.wa.gov'];
+// Every camera provider we serve. All camera images are proxied (never hotlinked from the
+// client), so this list must cover each provider's image host.
+const CAMERA_HOST_ALLOW = [
+  'nyctmc.org', 'dot.ca.gov', 'ca.gov', 'windy.com', 'wsdot.wa.gov',
+  'divas.cloud',      // FL511 camera stills
+  'amazonaws.com',    // TfL JamCam stills (s3 jamcams.tfl.gov.uk)
+  'tfl.gov.uk',
+];
 const imgCache = new Map(); // id -> { buf, type, expires }
 const IMG_CACHE_MAX = 1500;
 app.get('/api/camimg/:id', async (req, res) => {
