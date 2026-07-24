@@ -33,6 +33,11 @@ pub struct CachedTile {
 pub struct AppState {
     /// JSON + tile client: connect + total timeouts (parity with AbortSignal.timeout(8000)).
     pub http: reqwest::Client,
+    /// HTTP/1.1-only client with a longer (12 s) total timeout, for slow upstreams like
+    /// lapdonline.org — an Akamai-fronted WordPress feed that takes ~8-10 s to first byte,
+    /// so the shared 8 s client always timed out (Node's govrss uses a 12 s timeout, hence
+    /// it worked there). HTTP/1.1-only matches Node/undici and drops the needless h2 ALPN.
+    pub http1: reqwest::Client,
     /// ATC stream client: connect timeout only, NO total timeout (a total timeout would
     /// kill a healthy infinite Icecast stream).
     pub stream: reqwest::Client,
@@ -42,6 +47,8 @@ pub struct AppState {
     pub tiles: Cache<String, CachedTile>,
     /// resolved LiveATC Icecast host per feed (30-min TTL).
     pub atc_urls: Cache<String, String>,
+    /// resolved keyed/opt-in source config (env-derived, built once) — mirror of Node CITY_CFG.
+    pub cfg: std::sync::Arc<crate::proxy::sources::registry::Config>,
 }
 
 impl AppState {
@@ -51,6 +58,13 @@ impl AppState {
             .timeout(Duration::from_secs(8))
             .build()
             .expect("build http client");
+
+        let http1 = reqwest::Client::builder()
+            .http1_only()
+            .connect_timeout(Duration::from_secs(8))
+            .timeout(Duration::from_secs(12)) // lapdonline is slow (~8-10 s TTFB); match Node's 12 s
+            .build()
+            .expect("build http1 client");
 
         let stream = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(8))
@@ -74,7 +88,9 @@ impl AppState {
             .time_to_live(Duration::from_secs(30 * 60))
             .build();
 
-        Self { http, stream, json, tiles, atc_urls }
+        let cfg = std::sync::Arc::new(crate::proxy::sources::registry::resolve_config());
+
+        Self { http, http1, stream, json, tiles, atc_urls, cfg }
     }
 }
 
@@ -88,6 +104,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/atc/{feed}", get(proxy::atc::stream))
         .route("/api/weather", get(proxy::weather::handler))
         .route("/api/incidents", get(proxy::incidents::handler))
+        .route("/api/sources", get(proxy::incidents::sources))
         .route("/api/cameras", get(proxy::cameras::handler))
         .route("/api/camimg/{id}", get(proxy::cameras::image))
         .route("/api/geolocate", get(proxy::geolocate::handler))

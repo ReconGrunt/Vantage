@@ -150,14 +150,18 @@ pub async fn lapd_news(st: &AppState, b: &Bbox) -> Result<Vec<Value>, String> {
     if !b.intersects(LA_REGION) {
         return Ok(vec![]);
     }
+    // lapdonline.org's WAF fingerprints the TLS/ALPN handshake and refuses the default
+    // h2-advertising client at the transport layer (Node/undici, HTTP/1.1-only, is accepted).
+    // Use the dedicated HTTP/1.1 client + a fuller browser header set to match undici.
     let r = st
-        .http
+        .http1
         .get("https://www.lapdonline.org/feed/")
         .header("User-Agent", BROWSER_UA)
         .header("Accept", "application/rss+xml, application/xml, text/xml, */*")
+        .header("Accept-Language", "en-US,en;q=0.9")
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(err_chain)?;
     if !r.status().is_success() {
         return Err(format!("{} for lapdonline feed", r.status()));
     }
@@ -228,6 +232,19 @@ const CHP_AREAS: &[(&str, f64, f64)] = &[
     ("antelope valley", 34.6890, -118.1640),
     ("castaic", 34.4361, -118.5936),
 ];
+
+/// Walk an error's `source()` chain into one string — turns reqwest's opaque
+/// "error sending request" into the real cause (TLS handshake / reset / timeout).
+fn err_chain(e: reqwest::Error) -> String {
+    let mut s = e.to_string();
+    let mut src = std::error::Error::source(&e);
+    while let Some(inner) = src {
+        s.push_str(" <- ");
+        s.push_str(&inner.to_string());
+        src = inner.source();
+    }
+    s
+}
 
 fn chp_area(name: &str) -> Option<(f64, f64)> {
     let n = name.trim().to_lowercase();

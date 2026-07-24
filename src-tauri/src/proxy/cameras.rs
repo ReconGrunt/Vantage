@@ -2,8 +2,8 @@
 // server/index.js. Fans out across every keyless camera adapter (Caltrans CWWP2, NYC DOT,
 // FL511 via ArcGIS, TfL JamCams) and fuses the results.
 //
-// Response: { cameras: Camera[], ts } — key-for-key identical to the Node backend.
-// Only officially-published public cameras; never private or unsecured streams.
+// Response: { cameras: Camera[], sources: [{id,ok,count,note?}], ts } — key-for-key identical
+// to the Node backend. Only officially-published public cameras; never private/unsecured streams.
 
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
@@ -21,7 +21,7 @@ use futures_util::future::join_all;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::proxy::sources::{arcgis, cams, Bbox};
+use crate::proxy::sources::{arcgis, cams, keyed, Bbox};
 use crate::server::{unix_now, AppState, Cached};
 
 #[derive(Deserialize)]
@@ -188,6 +188,13 @@ pub async fn handler(State(st): State<AppState>, Query(q): Query<Q>) -> Response
             continue;
         }
         futs.push((ly.id, Box::pin(async move { arcgis::fetch(stref, ly, bref).await.map(cams::CamOut::simple) })));
+    }
+    // Keyed camera feeds — only when their env key is present (parity with registry.rs).
+    if st.cfg.windy_key.is_some() {
+        futs.push(("windy-cam", Box::pin(async move { keyed::windy(stref, bref).await.map(cams::CamOut::simple) })));
+    }
+    if st.cfg.wsdot_key.is_some() {
+        futs.push(("wsdot-cam", Box::pin(async move { keyed::wsdot_cam(stref, bref).await.map(cams::CamOut::simple) })));
     }
 
     let mut cameras: Vec<Value> = Vec::new();

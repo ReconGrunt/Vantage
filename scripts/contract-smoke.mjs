@@ -89,6 +89,38 @@ async function checkContentType(label, path, wanted) {
   return out;
 }
 
+// /api/sources must expose the SAME adapter catalog on both backends (this was a real gap:
+// Node had the route, Rust didn't — the desktop City feed-catalog was degraded).
+async function checkSourceIds() {
+  try {
+    const [n, r] = await Promise.all([getJson(NODE_URL, '/api/sources'), getJson(RUST_URL, '/api/sources')]);
+    const ni = (n.sources || []).map((s) => s.id).sort();
+    const ri = (r.sources || []).map((s) => s.id).sort();
+    const miss = ni.filter((x) => !ri.includes(x)), extra = ri.filter((x) => !ni.includes(x));
+    if (miss.length || extra.length) fail(`sources id set: node-only [${miss}] rust-only [${extra}]`);
+    else pass(`sources id set: ${ni.length} identical`);
+    const ne = Object.fromEntries((n.sources || []).map((s) => [s.id, s.enabled]));
+    const re = Object.fromEntries((r.sources || []).map((s) => [s.id, s.enabled]));
+    const bad = ni.filter((id) => ne[id] !== re[id]);
+    if (bad.length) fail(`sources enabled mismatch: [${bad}]`); else pass('sources enabled state: identical');
+  } catch (e) { fail(`sources id set: ${e.message}`); }
+}
+
+// /api/camimg/:id must resolve a served camera id and return an image on both backends.
+async function checkCamImg() {
+  for (const [name, base] of [['node', NODE_URL], ['rust', RUST_URL]]) {
+    try {
+      const cams = await getJson(base, `/api/cameras?lat=${LAT}&lon=${LON}&radius=40`);
+      const cam = (cams.cameras || []).find((c) => c.proxied);
+      if (!cam) { pass(`camimg [${name}]: (no proxied camera in range — skipped)`); continue; }
+      const res = await fetch(base + `/api/camimg/${encodeURIComponent(cam.id)}`, { signal: AbortSignal.timeout(15000) });
+      const ct = res.headers.get('content-type') || '';
+      if (res.ok && ct.startsWith('image/')) pass(`camimg [${name}]: ${ct}`);
+      else fail(`camimg [${name}]: status ${res.status}, content-type "${ct}"`);
+    } catch (e) { fail(`camimg [${name}]: ${e.message}`); }
+  }
+}
+
 async function main() {
   console.log(`Contract smoke test\n  node = ${NODE_URL}\n  rust = ${RUST_URL}\n`);
 
@@ -109,6 +141,13 @@ async function main() {
 
   console.log('cameras (ground/city domain)');
   await checkJson('cameras', `/api/cameras?lat=${LAT}&lon=${LON}&radius=25`, 'cameras');
+
+  console.log('sources (adapter catalog)');
+  await checkJson('sources', '/api/sources', 'sources');
+  await checkSourceIds();
+
+  console.log('camimg (proxied camera image)');
+  await checkCamImg();
 
   console.log('geolocate (network location fallback)');
   await checkJson('geolocate', '/api/geolocate');

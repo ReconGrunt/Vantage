@@ -4,7 +4,7 @@
 
 use serde_json::Value;
 
-use super::{get_json, kind_from_text, make_event, num, s_of, sev_from_text, ts_or_now, Bbox};
+use super::{kind_from_text, make_event, num, s_of, sev_from_text, ts_or_now, Bbox, UA};
 use crate::server::AppState;
 
 pub struct Ds {
@@ -91,7 +91,17 @@ pub async fn fetch(st: &AppState, ds: &Ds, b: &Bbox) -> Result<Vec<Value>, Strin
         "https://{}/resource/{}.json?$limit=400&$order=:updated_at%20DESC",
         ds.host, ds.dataset
     );
-    let rows = get_json(st, &url, "application/json").await?;
+    // Socrata works keyless at a low rate; an optional SOCRATA_APP_TOKEN lifts it (parity
+    // with Node, which sends it as X-App-Token on every SODA call).
+    let mut req = st.http.get(&url).header("User-Agent", UA).header("Accept", "application/json");
+    if let Some(tok) = &st.cfg.socrata_token {
+        req = req.header("X-App-Token", tok);
+    }
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("{} for {}", resp.status(), url));
+    }
+    let rows: Value = resp.json().await.map_err(|e| e.to_string())?;
     let arr = match rows.as_array() {
         Some(a) => a,
         None => return Ok(vec![]),

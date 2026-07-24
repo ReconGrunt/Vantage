@@ -23,8 +23,14 @@ use futures_util::future::join_all;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::proxy::sources::{arcgis, hazards, la, road, socrata, Bbox};
+use crate::proxy::sources::{arcgis, gray, hazards, keyed, la, registry, road, socrata, Bbox};
 use crate::server::{unix_now, AppState, Cached};
+
+/// GET /api/sources — the adapter catalog with resolved enabled state. Mirror of the Node
+/// route (server/index.js) + listAdapters(); powers the City feed-catalog panel.
+pub async fn sources(State(st): State<AppState>) -> Response {
+    Json(json!({ "sources": registry::list_sources(&st.cfg) })).into_response()
+}
 
 #[derive(Deserialize)]
 pub struct Q {
@@ -91,6 +97,42 @@ pub async fn handler(State(st): State<AppState>, Query(q): Query<Q>) -> Response
     futs.push(Box::pin(async move { ("lapd-news", la::lapd_news(stref, bref).await) }));
     // CHP CAD — the only genuinely real-time public dispatch feed for LA (area-level).
     futs.push(Box::pin(async move { ("chp-cad", la::chp_cad(stref, bref).await) }));
+
+    // Keyed-but-free incident feeds — pushed only when their env key is present, so with no
+    // keys the source set is identical to Node's keyless core (enabled predicates mirror
+    // registry.rs exactly). Camera-category keyed feeds are wired in cameras.rs.
+    let cfg = &st.cfg;
+    if cfg.firms_key.is_some() {
+        futs.push(Box::pin(async move { ("firms", keyed::firms(stref, bref).await) }));
+    }
+    if cfg.airnow_key.is_some() {
+        futs.push(Box::pin(async move { ("airnow", keyed::airnow(stref, bref).await) }));
+    }
+    if cfg.wsdot_key.is_some() {
+        futs.push(Box::pin(async move { ("wsdot-alerts", keyed::wsdot_alerts(stref, bref).await) }));
+    }
+    if cfg.five11_sf_token.is_some() {
+        futs.push(Box::pin(async move { ("511sfbay", keyed::open511sf(stref, bref).await) }));
+    }
+    if cfg.ticketmaster_key.is_some() {
+        futs.push(Box::pin(async move { ("ticketmaster", keyed::ticketmaster(stref, bref).await) }));
+    }
+    // Opt-in "gray" feeds — DEFAULT OFF; only when an explicit flag is set.
+    if cfg.enable_citizen {
+        futs.push(Box::pin(async move { ("citizen", gray::citizen(stref, bref).await) }));
+    }
+    if cfg.enable_pulsepoint && !cfg.pulsepoint_agencies.is_empty() {
+        futs.push(Box::pin(async move { ("pulsepoint", gray::pulsepoint(stref, bref).await) }));
+    }
+    if cfg.enable_snap {
+        futs.push(Box::pin(async move { ("snapmap", gray::snapmap(stref, bref).await) }));
+    }
+    if cfg.enable_scanner && !cfg.scanner_systems.is_empty() {
+        futs.push(Box::pin(async move { ("scanner", gray::scanner(stref, bref).await) }));
+    }
+    if cfg.bluesky_query.is_some() {
+        futs.push(Box::pin(async move { ("bluesky", gray::bluesky(stref, bref).await) }));
+    }
 
     let results = join_all(futs).await;
 

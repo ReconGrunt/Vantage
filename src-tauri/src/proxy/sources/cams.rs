@@ -244,7 +244,12 @@ pub async fn tfl(st: &AppState, b: &Bbox) -> Result<CamOut, String> {
     if !b.intersects(LONDON) {
         return Ok(CamOut::simple(vec![]));
     }
-    let d = get_json(st, "https://api.tfl.gov.uk/Place/Type/JamCam", "application/json").await?;
+    // Keyless at a low rate; an optional TFL_APP_KEY lifts it (parity with Node tfl.js).
+    let url = match &st.cfg.tfl_key {
+        Some(k) => format!("https://api.tfl.gov.uk/Place/Type/JamCam?app_key={}", k),
+        None => "https://api.tfl.gov.uk/Place/Type/JamCam".to_string(),
+    };
+    let d = get_json(st, &url, "application/json").await?;
     let arr = match d.as_array() {
         Some(a) => a,
         None => return Ok(CamOut::simple(vec![])),

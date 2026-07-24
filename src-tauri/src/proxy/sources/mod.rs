@@ -9,8 +9,11 @@
 
 pub mod arcgis;
 pub mod cams;
+pub mod gray;
 pub mod hazards;
+pub mod keyed;
 pub mod la;
+pub mod registry;
 pub mod road;
 pub mod socrata;
 
