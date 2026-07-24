@@ -267,6 +267,11 @@
             <option value="fisheye">Fisheye dome 180° (planetarium dome)</option>
             <option value="free">Free look (screen)</option>
             <option value="radar">Tactical radar (top-down)</option>
+            <!-- #display-mode is the CANONICAL view value that ui.js reads back in
+                 updateModeRows(); every #view-switch button needs a matching option here
+                 or `select.value = mode` silently resolves to "" and that view's panel
+                 sections never show. -->
+            <option value="city">City activity (ground)</option>
           </select>
         </label>
         <label class="row sub" id="skyspan-row">Visible sky
