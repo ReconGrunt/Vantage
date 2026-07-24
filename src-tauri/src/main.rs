@@ -5,7 +5,10 @@
 // frontend and the /api/* proxy contract. The window is created at runtime pointing at that
 // localhost origin, so public/ stays a plain browser app - every native feature is driven
 // from Rust here, no Tauri IPC in the frontend.
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// Always use the Windows GUI subsystem — no console window on launch, in debug or release.
+// (The stock Tauri template keeps a console in debug for logs; this is a windowed kiosk app,
+// so the terminal is never wanted. Logs can be surfaced via the /api layer if needed.)
+#![windows_subsystem = "windows"]
 
 mod proxy;
 mod server;
