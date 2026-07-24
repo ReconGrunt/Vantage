@@ -282,6 +282,30 @@ body.brush-paint #brush-cursor { display: block; }
   50% { box-shadow: 0 10px 30px rgba(0, 0, 0, .5), 0 0 14px rgba(232, 85, 42, .45); }
 }
 
+/* ---- upcoming satellite passes (dome only; top-right) --------------------------- */
+#nextpasses {
+  position: fixed; top: 14px; right: 14px; z-index: 24; pointer-events: none;
+  min-width: 176px; padding: 7px 9px 8px; border-radius: 3px;
+  background: var(--panel-2); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  border: 1px solid var(--line-2); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+}
+#nextpasses[hidden] { display: none; }
+#nextpasses .np-h {
+  color: var(--mute-2); font-size: 9.5px; font-weight: 700; letter-spacing: 0.16em;
+  text-transform: uppercase; padding-bottom: 5px; margin-bottom: 4px; border-bottom: 1px solid var(--line);
+}
+.np-row {
+  display: grid; grid-template-columns: 1fr auto auto 10px; gap: 8px; align-items: center;
+  color: var(--text); font-size: 11px; padding: 2px 0;
+}
+.np-row.iss .np-n { color: var(--live); font-weight: 600; }
+.np-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: 0.04em; }
+.np-w { color: var(--mute-2); font-size: 10px; }
+.np-el { color: var(--text); font-weight: 600; }
+.np-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line-2); }
+.np-dot.lit { background: var(--live); box-shadow: 0 0 6px var(--live); }
+
 /* ---- overhead manifest (was: amber split-flap board) --------------------------- */
 /* Retuned into the command palette: a mono manifest of what's overhead / inbound —
    neutral text with service-colour tints, one teal "NOW", no CRT glow. */

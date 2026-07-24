@@ -11,7 +11,9 @@
 // diverge, the app's positioning math has a defect. No app code, no network, no
 // localhost — pure node.
 
-import * as satellite from 'satellite.js';
+// Import the SAME vendored ESM the app uses (satellite.js isn't an installed npm dep here;
+// the browser resolves it via the importmap). This keeps the test runnable standalone.
+import * as satellite from '../public/vendor/satellite.js';
 
 const RAD2DEG = 180 / Math.PI;
 const DEG2RAD = Math.PI / 180;

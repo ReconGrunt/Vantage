@@ -573,7 +573,7 @@ function setDisplay(mode) {
 // perspective modes, magnifies the dome disc in fisheye.
 function applyZoom() {
   const z = state.zoom;
-  if (state.display === 'radar') return;   // radar range is set by its own control, not FOV/zoom
+  if (state.display === 'radar' || state.display === 'city') return;   // 2D views: no 3D FOV/zoom
   if (state.display === 'fisheye') {
     fisheye.setCalibration({ scale: z });
   } else {
@@ -701,7 +701,31 @@ function renderIss() {
   }
 }
 refreshIss();
-setInterval(() => { if (renderActive) refreshIss(); }, 12_000);
+
+// --- upcoming satellite passes strip (dome views only) ---
+// Uses satellites.passLookahead() on the cheap 12 s cadence (NOT per-frame): what's overhead
+// now + the soonest rises, top few by prominence. The city/radar CSS also force-hides it.
+const passesEl = document.getElementById('nextpasses');
+function refreshPasses() {
+  if (!passesEl) return;
+  const dome = state.display !== 'radar' && state.display !== 'city';
+  if (!dome || !state.layers.satellites) { passesEl.hidden = true; return; }
+  const list = layers.satellites
+    .passLookahead(state.observer, now(), layers.planets.sunAltitude, { top: 6 })
+    .filter((p) => p.state === 'up' || (p.etaSec != null && p.etaSec <= 3600)) // up now or rising within 1 h
+    .slice(0, 5);
+  if (!list.length) { passesEl.hidden = true; return; }
+  passesEl.hidden = false;
+  passesEl.innerHTML = '<div class="np-h">NEXT PASSES</div>' + list.map((p) => {
+    const when = p.state === 'up' ? 'NOW' : `+${Math.max(0, Math.round(p.etaSec / 60))}m`;
+    const nm = p.satName.length > 18 ? p.satName.slice(0, 18) : p.satName;
+    const dot = `<i class="np-dot${p.sunlit ? ' lit' : ''}" title="${p.sunlit ? 'dark sky — visible' : 'daylight'}"></i>`;
+    return `<div class="np-row${p.isISS ? ' iss' : ''}"><span class="np-n">${nm}</span>`
+      + `<span class="np-w">${when}</span><span class="np-el">${Math.round(p.peakElDeg)}°</span>${dot}</div>`;
+  }).join('');
+}
+refreshPasses();
+setInterval(() => { if (renderActive) { refreshIss(); refreshPasses(); } }, 12_000);
 setInterval(() => {
   if (!renderActive) return;
   flightBoard.tick();

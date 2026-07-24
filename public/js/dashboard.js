@@ -36,6 +36,18 @@ const VIEWS = {
     { id: 'rdr-attrib',    label: 'Attribution',    minW: 120, minH: 16,  def: [14, 700, 260, 20] },
     { id: 'atc-chip',      label: 'ATC chip',       minW: 150, minH: 34,  def: [1180, 470, 200, 44] },
   ],
+  // City/Ground is its own view — do NOT fold it into 'dome', or the dome #panel rect gets
+  // re-asserted over the City chrome (the doubled/overlapping header bug). Some of these are
+  // built lazily by city.js, so they're framed via `def` until first measured.
+  city: [
+    { id: 'panel',      label: 'Command panel',  minW: 220, minH: 120 },
+    { id: 'cty-status', label: 'Status bar',     minW: 320, minH: 28,  def: [0, 0, 900, 32] },
+    { id: 'cty-list',   label: 'Activity list',  minW: 280, minH: 160, def: [1020, 470, 440, 380] },
+    { id: 'cty-detail', label: 'Incident detail',minW: 240, minH: 120, def: [1020, 60, 440, 300] },
+    { id: 'cty-cam',    label: 'Camera viewer',  minW: 280, minH: 160, def: [980, 60, 424, 360] },
+    { id: 'cty-health', label: 'Feed health',    minW: 180, minH: 80 },
+    { id: 'cty-log',    label: 'Event log',      minW: 180, minH: 80 },
+  ],
 };
 
 const snap = (v) => Math.round(v / CELL) * CELL;
@@ -58,11 +70,12 @@ export class DashboardLayout {
     // apply any saved rects/hidden flags immediately (harmless while a widget is hidden)
     this._applyView('dome');
     this._applyView('radar');
+    this._applyView('city');
   }
 
   // ---- public API (driven by main.js) ----
   setDisplayMode(mode) {
-    this.view = mode === 'radar' ? 'radar' : 'dome';
+    this.view = mode === 'radar' ? 'radar' : mode === 'city' ? 'city' : 'dome';
     this._applyView(this.view);       // re-assert this view's rects (e.g. #atc-chip differs per view)
     if (this.editing) this._rebuild();
   }
@@ -116,6 +129,11 @@ export class DashboardLayout {
         if (r.w != null && r.h != null) this._adoptSize(el, r.w, r.h);
         el.classList.toggle('dash-force-hide', !!r.hidden);
       } else {
+        // No saved rect for this view: clear any inline styles a PREVIOUS view left on a
+        // shared widget (e.g. #panel arranged in dome) so this view falls back to its CSS
+        // position instead of inheriting the other view's rect. This is what stopped the
+        // dome panel rect from overlapping the City header.
+        this._strip(el);
         el.classList.remove('dash-force-hide');
       }
     }
@@ -190,7 +208,8 @@ export class DashboardLayout {
   }
 
   _buildPalette() {
-    this.palette.querySelector('.dash-pal-view').textContent = this.view === 'radar' ? 'Tactical scope' : 'Dome / projector';
+    this.palette.querySelector('.dash-pal-view').textContent =
+      this.view === 'radar' ? 'Tactical scope' : this.view === 'city' ? 'Ground · city' : 'Dome / projector';
     const b = this.layout[this.view] || {};
     this._list.innerHTML = '';
     for (const w of VIEWS[this.view]) {

@@ -46,7 +46,29 @@ export class SatelliteLayer {
     this.models = null;
     this.issMesh = null;
     this.satPool = [];     // reusable generic-satellite model clones
+
+    // Off-thread SGP4: the worker owns its own satrec copies and answers `tick`s with the
+    // visible set. If it fails to spin up, everything transparently falls back to the
+    // synchronous path below (the sky never blanks). Main keeps this.satrecs for the
+    // fallback and for the throttled overheadReport()/passLookahead() queries.
+    this._satByName = new Map();   // name -> satrec, to re-attach a satrec to a worker record
+    this._worker = null;
+    this._workerData = null;       // latest {visible:[…]} reply
+    this._lastTickMs = 0;
+    this._initWorker();
+
     scene.add(this.group);
+  }
+
+  _initWorker() {
+    try {
+      const w = new Worker(new URL('./sat-worker.js', import.meta.url), { type: 'module' });
+      w.onmessage = (e) => { if (e.data && e.data.type === 'positions') this._workerData = e.data.visible; };
+      w.onerror = () => { this._worker = null; this._workerData = null; }; // dead worker → sync fallback
+      this._worker = w;
+    } catch {
+      this._worker = null;   // e.g. module workers unsupported → sync path
+    }
   }
 
   setVisible(v) { this.group.visible = v; }
@@ -83,72 +105,89 @@ export class SatelliteLayer {
         if (satrec.error === 0) this.satrecs.push({ name: s.name, satrec });
       } catch { /* skip bad TLE */ }
     }
+    this._satByName = new Map(this.satrecs.map((s) => [s.name, s.satrec]));
+    // Hand the raw TLE lines to the worker (it builds its own satrecs; none cross the boundary).
+    if (this._worker) this._worker.postMessage({ type: 'load', sats: data.sats || [] });
+    this._workerData = null; // force a fresh tick against the new elements
     return this.satrecs.length;
   }
 
   update(observer, date) {
     if (!this.group.visible || !this.satrecs.length) return;
+    if (this._worker) {
+      // Throttle ticks to ~10 Hz (sats crawl across the sky; a per-frame post floods the
+      // worker), and apply the latest reply every frame for smooth motion. Until the first
+      // reply lands (or if the worker is dead), fall through to the synchronous path so the
+      // sky is never blank.
+      const nowMs = date.getTime();
+      if (nowMs - this._lastTickMs > 100) {
+        this._lastTickMs = nowMs;
+        this._worker.postMessage({ type: 'tick', observer: { lat: observer.lat, lon: observer.lon, alt: observer.alt || 0 }, dateMs: nowMs });
+      }
+      this._applyVisible(this._workerData || this._propagateAll(observer, date), date);
+    } else {
+      this._applyVisible(this._propagateAll(observer, date), date);
+    }
+  }
 
+  // Synchronous SGP4 over every satrec — the fallback path AND the exact twin of what the
+  // worker computes. Returns a plain-number visible set: {name,azDeg,altDeg,heightKm,speedKmS,
+  // rangeKm,isISS}. No THREE/no pooled records here, so it's identical work to the worker.
+  _propagateAll(observer, date) {
     const gmst = satellite.gstime(date);
-    const observerGd = {
-      longitude: observer.lon * DEG,
-      latitude: observer.lat * DEG,
-      height: (observer.alt || 0) / 1000, // km
-    };
-
-    const posArr = this._posArr;
-    let n = 0;
-    // Reuse the array + pooled records instead of reallocating every frame (this
-    // runs at 60fps for a 24/7 kiosk; the visual/active groups have 100s of sats).
-    const vis = this.visibleSats;
-    vis.length = 0;
-    let issRec = null;
-
+    const gd = { longitude: observer.lon * DEG, latitude: observer.lat * DEG, height: (observer.alt || 0) / 1000 };
+    const vis = [];
     for (const { name, satrec } of this.satrecs) {
-      if (n >= this.maxPoints) break;
+      if (vis.length >= this.maxPoints) break;
       const pv = satellite.propagate(satrec, date);
       if (!pv || !pv.position) continue;
       const ecf = satellite.eciToEcf(pv.position, gmst);
-      const look = satellite.ecfToLookAngles(observerGd, ecf);
+      const look = satellite.ecfToLookAngles(gd, ecf);
       const altDeg = look.elevation * (180 / Math.PI);
       if (altDeg < 0) continue; // below horizon
-
       const azDeg = (look.azimuth * (180 / Math.PI) + 360) % 360;
+      const geo = satellite.eciToGeodetic(pv.position, gmst);
+      const v = pv.velocity;
+      const speed = v ? Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z) : null;
+      vis.push({ name, azDeg, altDeg, heightKm: geo.height, speedKmS: speed, rangeKm: look.rangeSat, isISS: /ISS|ZARYA/i.test(name) });
+    }
+    return vis;
+  }
+
+  // Write a visible set into the preallocated GPU buffer + rebuild this.visibleSats (with the
+  // satrec re-attached by name for overheadReport/passLookahead), place the 3D models, and
+  // update the ISS label. Shared by the sync fallback and the worker path.
+  _applyVisible(vis, date) {
+    const posArr = this._posArr;
+    let n = 0;
+    const list = this.visibleSats;
+    list.length = 0;
+    let issRec = null;
+
+    for (const s of vis) {
+      if (n >= this.maxPoints) break;
       let rec = this._recPool[n];
       if (!rec) rec = this._recPool[n] = { pos: new THREE.Vector3() };
-      domePositionInto(rec.pos, azDeg, altDeg, SHELLS.satellites);
+      domePositionInto(rec.pos, s.azDeg, s.altDeg, SHELLS.satellites);
       const p = rec.pos;
       posArr[n * 3] = p.x; posArr[n * 3 + 1] = p.y; posArr[n * 3 + 2] = p.z;
       n++;
-
-      // height above Earth (km) and orbital speed (km/s)
-      const gd = satellite.eciToGeodetic(pv.position, gmst);
-      const v = pv.velocity;
-      const speed = v ? Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z) : null;
-
-      const isISS = /ISS|ZARYA/i.test(name);
-      rec.name = name; rec.azimuth = azDeg; rec.altitude = altDeg; rec.rangeKm = look.rangeSat;
-      rec.heightKm = gd.height; rec.speedKmS = speed; rec.satrec = satrec; rec.isISS = isISS;
-      vis.push(rec);
-
-      if (isISS) issRec = rec;
+      rec.name = s.name; rec.azimuth = s.azDeg; rec.altitude = s.altDeg; rec.rangeKm = s.rangeKm;
+      rec.heightKm = s.heightKm; rec.speedKmS = s.speedKmS; rec.isISS = s.isISS;
+      rec.satrec = this._satByName.get(s.name) || null; // re-attach for pass/overhead queries
+      list.push(rec);
+      if (s.isISS) issRec = rec;
     }
 
-    // Commit in place: only flag the used range dirty + redraw n points. No new
-    // typed array, no new attribute, no full re-upload. We also narrow the GPU
-    // upload to just the 0..n*3 floats actually written this frame via
-    // addUpdateRange (three r160 API — verified against the CDN-pinned 0.160.0
-    // src: WebGLAttributes uploads `updateRanges` with bufferSubData and clears
-    // them each frame; the legacy `updateRange` object is the deprecated path).
-    // Without a range, needsUpdate re-uploads the whole 12000-point buffer
-    // (~144 KB) every frame regardless of how few sats are up.
+    // Commit in place: only flag the used range dirty + redraw n points. No new typed array,
+    // no new attribute, no full re-upload. addUpdateRange narrows the GPU upload to the
+    // 0..n*3 floats actually written (three r160 API); without it needsUpdate re-uploads the
+    // whole 12000-point buffer (~144 KB) every frame regardless of how few sats are up.
     const posAttr = this.geom.attributes.position;
     posAttr.clearUpdateRanges?.();
     posAttr.addUpdateRange?.(0, n * 3);
     this.geom.setDrawRange(0, n);
     posAttr.needsUpdate = true;
-    // Bounding sphere big enough to cover the whole satellite shell so frustum
-    // culling never wrongly hides points as the count changes frame to frame.
     if (!this.geom.boundingSphere) this.geom.boundingSphere = new THREE.Sphere();
     this.geom.boundingSphere.center.set(0, 0, 0);
     this.geom.boundingSphere.radius = SHELLS.satellites * 1.01;
@@ -234,6 +273,82 @@ export class SatelliteLayer {
     let maxEl = 0;
     for (let t = riseT; t <= riseT + 700; t += 20) maxEl = Math.max(maxEl, elAt(new Date(date.getTime() + t * 1000)));
     return { up: false, etaSec: riseT, maxEl, visible };
+  }
+
+  // Upcoming-pass lookahead — a generalisation of issStatus() to the top-N sats, on the
+  // SAME cached satrecs. NOT per-frame: call it on the throttled ISS/board cadence (it is
+  // O(top · maxSec/stepSec) propagations). Returns PassPrediction[] (contract in AGENT_SWARM):
+  //   { satName, isISS, state:'up'|'rising', nowElDeg, etaSec, peakElDeg, peakEtaSec,
+  //     riseAzDeg, setEtaSec, sunlit } — az 0=N CW, el deg, times in seconds from `date`.
+  passLookahead(observer, date, sunAltDeg = -90, opts = {}) {
+    const { horizonDeg = 0, maxSec = 5400, stepSec = 30, top = 8 } = opts;
+    const gd = { longitude: observer.lon * DEG, latitude: observer.lat * DEG, height: (observer.alt || 0) / 1000 };
+    const sunlit = sunAltDeg < -6; // observer sky dark enough for a pass to be visible (best-effort)
+
+    // Candidates: the currently-overhead sats (highest first), plus the ISS always, deduped.
+    const cands = [];
+    const seen = new Set();
+    for (const s of [...this.visibleSats].sort((a, b) => b.altitude - a.altitude)) {
+      if (seen.has(s.name)) continue;
+      seen.add(s.name);
+      cands.push({ name: s.name, satrec: s.satrec });
+      if (cands.length >= top) break;
+    }
+    const iss = this.satrecs.find((s) => /ISS|ZARYA/i.test(s.name));
+    if (iss && !seen.has(iss.name)) cands.push({ name: iss.name, satrec: iss.satrec });
+
+    const out = [];
+    for (const c of cands) {
+      const p = this._predictPass(gd, c.satrec, date, horizonDeg, maxSec, stepSec);
+      if (p) out.push({ satName: c.name, isISS: /ISS|ZARYA/i.test(c.name), sunlit, ...p });
+    }
+    // up-now first (highest peak), then rising by soonest ETA
+    out.sort((a, b) => (a.state === b.state
+      ? (a.state === 'up' ? b.peakElDeg - a.peakElDeg : (a.etaSec ?? 1e9) - (b.etaSec ?? 1e9))
+      : (a.state === 'up' ? -1 : 1)));
+    return out;
+  }
+
+  // One satellite's pass: elevation/azimuth stepped forward from `date`. Mirrors the
+  // issStatus() stepping but returns the full PassPrediction fields (minus satName/isISS/sunlit).
+  _predictPass(gd, satrec, date, horizonDeg, maxSec, stepSec) {
+    const sample = (d) => {
+      const pv = satellite.propagate(satrec, d);
+      if (!pv || !pv.position) return null;
+      const look = satellite.ecfToLookAngles(gd, satellite.eciToEcf(pv.position, satellite.gstime(d)));
+      return { el: look.elevation * 180 / Math.PI, az: (look.azimuth * 180 / Math.PI + 360) % 360 };
+    };
+    const now = sample(date);
+    if (!now) return null;
+    const at = (t) => sample(new Date(date.getTime() + t * 1000));
+
+    if (now.el >= horizonDeg) {           // up now → find culmination + set
+      let peakEl = now.el, peakT = 0, setT = null;
+      for (let t = stepSec; t <= maxSec; t += stepSec) {
+        const s = at(t);
+        if (!s) break;
+        if (s.el > peakEl) { peakEl = s.el; peakT = t; }
+        if (s.el < horizonDeg) { setT = t; break; }
+      }
+      return { state: 'up', nowElDeg: +now.el.toFixed(1), etaSec: 0, peakElDeg: +peakEl.toFixed(1), peakEtaSec: peakT, riseAzDeg: null, setEtaSec: setT };
+    }
+
+    let prev = now.el, riseT = null, riseAz = null;   // below horizon → find next rise
+    for (let t = stepSec; t <= maxSec; t += stepSec) {
+      const s = at(t);
+      if (!s) break;
+      if (prev < horizonDeg && s.el >= horizonDeg) { riseT = t; riseAz = s.az; break; }
+      prev = s.el;
+    }
+    if (riseT == null) return { state: 'rising', nowElDeg: +now.el.toFixed(1), etaSec: null, peakElDeg: 0, peakEtaSec: 0, riseAzDeg: null, setEtaSec: null };
+    let peakEl = 0, peakT = riseT, setT = null;
+    for (let t = riseT; t <= riseT + 900; t += stepSec) {
+      const s = at(t);
+      if (!s) break;
+      if (s.el > peakEl) { peakEl = s.el; peakT = t; }
+      if (t > riseT && s.el < horizonDeg) { setT = t; break; }
+    }
+    return { state: 'rising', nowElDeg: +now.el.toFixed(1), etaSec: riseT, peakElDeg: +peakEl.toFixed(1), peakEtaSec: peakT, riseAzDeg: +riseAz.toFixed(0), setEtaSec: setT };
   }
 
   _peak(observer, satrec, date) {

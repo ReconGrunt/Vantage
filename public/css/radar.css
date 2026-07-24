@@ -41,6 +41,8 @@ body.radar-on #brush-cursor,
 body.radar-on #flightboard,
 body.radar-on #compass,
 body.radar-on #iss-alert,
+body.radar-on #nextpasses,
+body.radar-on #xr-buttons,
 body.radar-on #info { display: none !important; }
 
 /* drop the panel below the full-width tactical status strip so they don't overlap */
@@ -84,15 +86,8 @@ body.radar-on #panel { top: 40px; max-height: calc(100vh - 54px); }
 @keyframes rdrpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 #rdr-clock { color: var(--r-text); letter-spacing: 0.05em; }
 
-/* ---- control console (left rail) ------------------------------------------------ */
-#rdr-controls {
-  position: fixed; top: 44px; left: 14px; width: 278px;
-  max-height: calc(100vh - 58px); overflow-y: auto; pointer-events: auto;
-  padding: 4px 14px 14px;
-  scrollbar-width: thin; scrollbar-color: rgba(120, 150, 170, 0.35) transparent;
-}
-#rdr-controls::-webkit-scrollbar { width: 8px; }
-#rdr-controls::-webkit-scrollbar-thumb { background: rgba(120, 150, 170, 0.35); border-radius: 4px; }
+/* ---- control console styles (now hosted inside the shared #panel radar sections; the old
+   standalone #rdr-controls left-rail container was removed) ------------------------------ */
 .rdr-c-head {
   font-family: var(--r-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.16em;
   color: var(--r-text); padding: 11px 0 9px; border-bottom: 1px solid var(--r-grid);

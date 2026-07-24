@@ -31,12 +31,6 @@ const BASEMAPS = {
   terrain: { attribution: 'Map data © Esri' },
 };
 
-// selectable "how far back" windows (minutes); 0 = all
-export const CITY_WINDOWS = [
-  { min: 60, label: '1H' }, { min: 360, label: '6H' }, { min: 1440, label: '24H' }, { min: 0, label: 'ALL' },
-];
-export const CITY_RANGES_KM = [5, 10, 25, 50, 100];
-
 function haversineKm(aLat, aLon, bLat, bLon) {
   const dLat = (bLat - aLat) * DEG, dLon = (bLon - aLon) * DEG;
   const s = Math.sin(dLat / 2) ** 2 + Math.cos(aLat * DEG) * Math.cos(bLat * DEG) * Math.sin(dLon / 2) ** 2;
@@ -262,6 +256,10 @@ export class CityRenderer {
       this._collectCams();
       if (this.showCones) for (const c of this._camMarkers) this._drawCones(ctx, c);
       for (const c of this._camMarkers) this._drawCam(ctx, c);
+    } else {
+      // Cameras hidden: drop the on-screen markers so a click where a pin USED to be no
+      // longer opens the camera popup (_hitSite iterates this array).
+      this._camMarkers.length = 0;
     }
 
     this._drawOwnship(ctx);
@@ -480,7 +478,7 @@ export class CityRenderer {
     el.id = 'city-ui';
     el.innerHTML = `
       <div id="cty-status">
-        <span class="cty-brand"><i class="cty-mark"></i><b>VANTAGE</b><span class="cty-mode">Ground · City Activity</span></span>
+        <span class="cty-brand"><span class="cty-mode">Ground · City Activity</span></span>
         <span class="cty-sys"><i class="dot"></i><span id="cty-feed">CITY FEEDS</span></span>
         <span id="cty-clock" class="data"></span>
       </div>
